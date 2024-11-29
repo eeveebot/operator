@@ -1,0 +1,14 @@
+apiVersion: eevee.bot/v1alpha1
+kind: Redis
+metadata:
+  name: redis
+  namespace: my-eevee-bot
+spec:
+  # Number of Redis pods to spawn
+  size: 1
+
+  # Redis Port
+  containerPort: 6379
+
+  # Redis Password
+  redisPassword: areallygoodpassword
