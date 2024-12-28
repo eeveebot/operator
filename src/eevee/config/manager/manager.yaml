@@ -38,8 +38,6 @@ spec:
                   values:
                     - amd64
                     - arm64
-                    - ppc64le
-                    - s390x
                 - key: kubernetes.io/os
                   operator: In
                   values:
@@ -59,7 +57,7 @@ spec:
         name: manager
         env:
           - name: DEFAULT_TOOLBOX_IMAGE
-            value: ghcr.io/eeveebot/toolbox:v0.0.1
+            value: ghcr.io/eeveebot/toolbox:latest
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
