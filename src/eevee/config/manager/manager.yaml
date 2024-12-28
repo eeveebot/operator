@@ -68,7 +68,7 @@ spec:
         name: manager
         env:
           - name: DEFAULT_TOOLBOX_IMAGE
-            value: ghcr.io/eeveebot/toolbox:latest
+            value: ghcr.io/eeveebot/toolbox:v0.0.1
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:

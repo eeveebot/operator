@@ -5,3 +5,10 @@ metadata:
 spec:
   # Number of toolboxe replicas to deploy
   size: 1
+
+  # Override container image
+  # containerImage: ghcr.io/eeveebot/toolbox:latest
+
+  # Override pull policy
+  # Defaults to IfNotPresent
+  # pullPolicy: Always
