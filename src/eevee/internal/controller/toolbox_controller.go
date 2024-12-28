@@ -354,6 +354,8 @@ func (r *ToolboxReconciler) deploymentForToolbox(
 					},
 					SecurityContext: &corev1.PodSecurityContext{
 						RunAsNonRoot: &[]bool{true}[0],
+						RunAsUser:    &[]int64{1000}[0],
+						RunAsGroup:   &[]int64{1000}[0],
 						// IMPORTANT: seccomProfile was introduced with Kubernetes 1.19
 						// If you are looking for to produce solutions to be supported
 						// on lower versions you must remove this option.
