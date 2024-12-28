@@ -1,7 +1,8 @@
 apiVersion: eevee.bot/v1alpha1
 kind: Toolbox
 metadata:
-  name: toolbox-sample
+  name: toolbox
+  namespace: eevee
 spec:
   # Number of toolboxe replicas to deploy
   size: 1

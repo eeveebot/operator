@@ -1,7 +1,8 @@
 apiVersion: eevee.bot/v1alpha1
 kind: Nats
 metadata:
-  name: nats-sample
+  name: nats
+  namespace: eevee
 spec:
   ################################################################################
   # Global options
@@ -10,7 +11,7 @@ spec:
     image:
       # global image pull policy to use for all container images in the chart
       # can be overridden by individual image pullPolicy
-      pullPolicy:
+      pullPolicy: Always
       # global list of secret names to use as image pull secrets for all pod specs in the chart
       # secrets must exist in the same namespace
       # https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
@@ -30,7 +31,7 @@ spec:
   # override full name of the chart+release
   fullnameOverride:
   # override the namespace that resources are installed into
-  namespaceOverride:
+  namespaceOverride: eevee
 
   # reference a common CA Certificate or Bundle in all nats config `tls` blocks and nats-box contexts
   # note: `tls.verify` still must be set in the appropriate nats config `tls` blocks to require mTLS
@@ -63,8 +64,8 @@ spec:
       routeURLs:
         # if both user and password are set, they will be added to route URLs
         # and the cluster authorization block
-        user:
-        password:
+        user: eevee-nats
+        password: areallygoodpassword
         # set to true to use FQDN in route URLs
         useFQDN: false
         k8sClusterDomain: cluster.local
