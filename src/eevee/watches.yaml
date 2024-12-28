@@ -1,0 +1,6 @@
+# Use the 'create api' subcommand to add watches to this file.
+- group: eevee.bot
+  version: v1alpha1
+  kind: Nats
+  chart: helm-charts/nats
+#+kubebuilder:scaffold:watch

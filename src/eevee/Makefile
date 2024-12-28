@@ -160,7 +160,7 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
 	- $(CONTAINER_TOOL) buildx create --name eevee-builder
-	- $(CONTAINER_TOOL) buildx use eevee-builder
+	$(CONTAINER_TOOL) buildx use eevee-builder
 	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
 	- $(CONTAINER_TOOL) buildx rm eevee-builder
 	rm Dockerfile.cross

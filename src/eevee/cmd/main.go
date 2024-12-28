@@ -18,9 +18,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
-
-	eeveev1alpha1 "github.com/eeveebot/operator/api/v1alpha1"
-	"github.com/eeveebot/operator/internal/controller"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -32,7 +29,6 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
-	utilruntime.Must(eeveev1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -128,14 +124,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controller.RedisReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("redis-controller"),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Redis")
-		os.Exit(1)
-	}
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
