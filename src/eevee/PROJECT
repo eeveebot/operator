@@ -6,6 +6,14 @@ domain: bot
 layout:
 - go.kubebuilder.io/v4
 plugins:
+  deploy-image.go.kubebuilder.io/v1-alpha:
+    resources:
+    - domain: bot
+      group: eevee
+      kind: Toolbox
+      options:
+        image: ghcr.io/eeveebot/toolbox:latest
+      version: v1alpha1
   manifests.sdk.operatorframework.io/v2: {}
   scorecard.sdk.operatorframework.io/v2: {}
 projectName: eevee
@@ -17,5 +25,14 @@ resources:
   domain: bot
   group: eevee
   kind: Nats
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: bot
+  group: eevee
+  kind: Toolbox
+  path: github.com/eeveebot/operator/api/v1alpha1
   version: v1alpha1
 version: "3"

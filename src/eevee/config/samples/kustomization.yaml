@@ -1,4 +1,5 @@
 ## Append samples of your project ##
 resources:
 - eevee_v1alpha1_nats.yaml
+- eevee_v1alpha1_toolbox.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

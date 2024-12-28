@@ -65,6 +65,9 @@ spec:
           - --health-probe-bind-address=:8081
         image: controller:latest
         name: manager
+        env:
+        - name: TOOLBOX_IMAGE
+          value: ghcr.io/eeveebot/toolbox:latest
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:

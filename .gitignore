@@ -1,3 +1,4 @@
 pkg/**
 vendor/**
 src/eevee/vendor/**
+src/eevee/dist/**
