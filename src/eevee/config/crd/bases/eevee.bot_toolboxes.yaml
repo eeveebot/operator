@@ -39,6 +39,12 @@ spec:
           spec:
             description: ToolboxSpec defines the desired state of Toolbox
             properties:
+              containerImage:
+                description: ContainerImage defines the container image to use
+                type: string
+              pullPolicy:
+                description: PullPolicy defines the imagepullpolicy to use
+                type: string
               size:
                 description: |-
                   Size defines the number of Toolbox instances

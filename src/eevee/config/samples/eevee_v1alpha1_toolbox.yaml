@@ -3,6 +3,5 @@ kind: Toolbox
 metadata:
   name: toolbox-sample
 spec:
-  # TODO(user): edit the following value to ensure the number
-  # of Pods/Instances your Operand must have on cluster
+  # Number of toolboxe replicas to deploy
   size: 1

@@ -289,13 +289,22 @@ func (r *ToolboxReconciler) doFinalizerOperationsForToolbox(cr *eeveev1alpha1.To
 // deploymentForToolbox returns a Toolbox Deployment object
 func (r *ToolboxReconciler) deploymentForToolbox(
 	toolbox *eeveev1alpha1.Toolbox) (*appsv1.Deployment, error) {
-	ls := labelsForToolbox(toolbox.Name)
+
 	replicas := toolbox.Spec.Size
 
 	// Get the Operand image
-	image, err := imageForToolbox()
-	if err != nil {
-		return nil, err
+	image, nil := defaultImageForToolbox()
+	if len(toolbox.Spec.ContainerImage) != 0 {
+		image = toolbox.Spec.ContainerImage
+	}
+
+	ls := labelsForToolbox(toolbox.Name, image)
+
+	// Get the pull policy
+	pullPolicy := corev1.PullIfNotPresent
+	pullPolicyString := toolbox.Spec.PullPolicy
+	if pullPolicyString == "Always" {
+		pullPolicy = corev1.PullAlways
 	}
 
 	dep := &appsv1.Deployment{
@@ -319,28 +328,31 @@ func (r *ToolboxReconciler) deploymentForToolbox(
 					// makefile target docker-buildx. Also, you can use docker manifest inspect <image>
 					// to check what are the platforms supported.
 					// More info: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#node-affinity
-					//Affinity: &corev1.Affinity{
-					//	NodeAffinity: &corev1.NodeAffinity{
-					//		RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
-					//			NodeSelectorTerms: []corev1.NodeSelectorTerm{
-					//				{
-					//					MatchExpressions: []corev1.NodeSelectorRequirement{
-					//						{
-					//							Key:      "kubernetes.io/arch",
-					//							Operator: "In",
-					//							Values:   []string{"amd64", "arm64", "ppc64le", "s390x"},
-					//						},
-					//						{
-					//							Key:      "kubernetes.io/os",
-					//							Operator: "In",
-					//							Values:   []string{"linux"},
-					//						},
-					//					},
-					//				},
-					//			},
-					//		},
-					//	},
-					//},
+
+					// Only linux/amd64 for now
+					Affinity: &corev1.Affinity{
+						NodeAffinity: &corev1.NodeAffinity{
+							RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+								NodeSelectorTerms: []corev1.NodeSelectorTerm{
+									{
+										MatchExpressions: []corev1.NodeSelectorRequirement{
+											{
+												Key:      "kubernetes.io/arch",
+												Operator: "In",
+												Values:   []string{"amd64"},
+												// Values:   []string{"amd64", "arm64", "ppc64le", "s390x"},
+											},
+											{
+												Key:      "kubernetes.io/os",
+												Operator: "In",
+												Values:   []string{"linux"},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
 					SecurityContext: &corev1.PodSecurityContext{
 						RunAsNonRoot: &[]bool{true}[0],
 						// IMPORTANT: seccomProfile was introduced with Kubernetes 1.19
@@ -353,7 +365,7 @@ func (r *ToolboxReconciler) deploymentForToolbox(
 					Containers: []corev1.Container{{
 						Image:           image,
 						Name:            "toolbox",
-						ImagePullPolicy: corev1.PullIfNotPresent,
+						ImagePullPolicy: pullPolicy,
 						// Ensure restrictive context for the container
 						// More info: https://kubernetes.io/docs/concepts/security/pod-security-standards/#restricted
 						SecurityContext: &corev1.SecurityContext{
@@ -374,20 +386,18 @@ func (r *ToolboxReconciler) deploymentForToolbox(
 	// Set the ownerRef for the Deployment
 	// More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/owners-dependents/
 	if err := ctrl.SetControllerReference(toolbox, dep, r.Scheme); err != nil {
-		return nil, err
+		return dep, err
 	}
 	return dep, nil
 }
 
 // labelsForToolbox returns the labels for selecting the resources
 // More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/
-func labelsForToolbox(name string) map[string]string {
-	var imageTag string
-	image, err := imageForToolbox()
-	if err == nil {
-		imageTag = strings.Split(image, ":")[1]
-	}
-	return map[string]string{"app.kubernetes.io/name": "eevee",
+func labelsForToolbox(name string, image string) map[string]string {
+	imageTag := strings.Split(image, ":")[1]
+
+	return map[string]string{
+		"app.kubernetes.io/name":       name,
 		"app.kubernetes.io/version":    imageTag,
 		"app.kubernetes.io/managed-by": "ToolboxController",
 	}
@@ -395,11 +405,11 @@ func labelsForToolbox(name string) map[string]string {
 
 // imageForToolbox gets the Operand image which is managed by this controller
 // from the TOOLBOX_IMAGE environment variable defined in the config/manager/manager.yaml
-func imageForToolbox() (string, error) {
-	var imageEnvVar = "TOOLBOX_IMAGE"
+func defaultImageForToolbox() (string, error) {
+	var imageEnvVar = "DEFAULT_TOOLBOX_IMAGE"
 	image, found := os.LookupEnv(imageEnvVar)
 	if !found {
-		return "", fmt.Errorf("Unable to find %s environment variable with the image", imageEnvVar)
+		return "", fmt.Errorf("unable to find %s environment variable with the default image", imageEnvVar)
 	}
 	return image, nil
 }

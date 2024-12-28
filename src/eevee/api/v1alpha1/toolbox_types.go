@@ -19,6 +19,12 @@ type ToolboxSpec struct {
 	// +kubebuilder:validation:Maximum=3
 	// +kubebuilder:validation:ExclusiveMaximum=false
 	Size int32 `json:"size,omitempty"`
+
+	// ContainerImage defines the container image to use
+	ContainerImage string `json:"containerImage,omitempty"`
+
+	// PullPolicy defines the imagepullpolicy to use
+	PullPolicy string `json:"pullPolicy,omitempty"`
 }
 
 // ToolboxStatus defines the observed state of Toolbox
