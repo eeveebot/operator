@@ -339,8 +339,7 @@ func (r *ToolboxReconciler) deploymentForToolbox(
 											{
 												Key:      "kubernetes.io/arch",
 												Operator: "In",
-												Values:   []string{"amd64"},
-												// Values:   []string{"amd64", "arm64", "ppc64le", "s390x"},
+												Values:   []string{"amd64", "arm64", "ppc64le", "s390x"},
 											},
 											{
 												Key:      "kubernetes.io/os",
