@@ -24,6 +24,4 @@ resources:
 # if you do not want those helpers be installed with your Project.
 - toolbox_editor_role.yaml
 - toolbox_viewer_role.yaml
-- nats_editor_role.yaml
-- nats_viewer_role.yaml
 

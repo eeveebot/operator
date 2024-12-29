@@ -4,7 +4,7 @@ metadata:
   name: toolbox
   namespace: eevee
 spec:
-  # Number of toolboxe replicas to deploy
+  # Number of toolbox replicas to deploy
   size: 1
 
   # Override container image
