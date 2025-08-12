@@ -298,7 +298,7 @@ func (r *ToolboxReconciler) deploymentForToolbox(
 		image = toolbox.Spec.ContainerImage
 	}
 
-	ls := labelsForToolbox(toolbox.Name, image)
+	labels := labelsForToolbox(toolbox.Name, image)
 
 	// Get the pull policy
 	pullPolicy := corev1.PullIfNotPresent
@@ -315,11 +315,11 @@ func (r *ToolboxReconciler) deploymentForToolbox(
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
 			Selector: &metav1.LabelSelector{
-				MatchLabels: ls,
+				MatchLabels: labels,
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: ls,
+					Labels: labels,
 				},
 				Spec: corev1.PodSpec{
 					// TODO(user): Uncomment the following code to configure the nodeAffinity expression
