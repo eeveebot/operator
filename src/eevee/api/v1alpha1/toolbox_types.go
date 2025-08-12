@@ -9,9 +9,6 @@ import (
 
 // ToolboxSpec defines the desired state of Toolbox
 type ToolboxSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
 	// Size defines the number of Toolbox instances
 	// The following markers will use OpenAPI v3 schema to validate the value
 	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
