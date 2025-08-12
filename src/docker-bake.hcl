@@ -3,8 +3,8 @@ target "docker-metadata-action" {}
 
 target "build" {
   inherits = ["docker-metadata-action"]
-  context = "./src/"
-  dockerfile = "./src/Dockerfile"
+  context = "./src/eevee/"
+  dockerfile = "./Dockerfile"
   platforms = [
     "linux/amd64",
     "linux/arm64",
