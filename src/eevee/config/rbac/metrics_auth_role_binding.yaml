@@ -8,5 +8,5 @@ roleRef:
   name: metrics-auth-role
 subjects:
 - kind: ServiceAccount
-  name: eevee-operator
+  name: operator
   namespace: system

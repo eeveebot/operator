@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Namespace
 metadata:
   labels:
-    control-plane: eevee-operator
+    control-plane: eevee
     app.kubernetes.io/name: eevee
     app.kubernetes.io/managed-by: kustomize
   name: system
@@ -10,23 +10,23 @@ metadata:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: eevee-operator
+  name: operator
   namespace: system
   labels:
-    control-plane: eevee-operator
+    control-plane: eevee
     app.kubernetes.io/name: eevee
     app.kubernetes.io/managed-by: kustomize
 spec:
   selector:
     matchLabels:
-      control-plane: eevee-operator
+      control-plane: eevee
   replicas: 1
   template:
     metadata:
       annotations:
         kubectl.kubernetes.io/default-container: manager
       labels:
-        control-plane: eevee-operator
+        control-plane: eevee
     spec:
       affinity:
         nodeAffinity:
@@ -82,5 +82,5 @@ spec:
           requests:
             cpu: 10m
             memory: 64Mi
-      serviceAccountName: eevee-operator
+      serviceAccountName: eevee
       terminationGracePeriodSeconds: 10

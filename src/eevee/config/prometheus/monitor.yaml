@@ -3,10 +3,10 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   labels:
-    control-plane: eevee-operator
+    control-plane: eevee
     app.kubernetes.io/name: eevee
     app.kubernetes.io/managed-by: kustomize
-  name: eevee-operator-metrics-monitor
+  name: eevee-metrics-monitor
   namespace: system
 spec:
   endpoints:
@@ -27,4 +27,4 @@ spec:
         insecureSkipVerify: true
   selector:
     matchLabels:
-      control-plane: eevee-operator
+      control-plane: eevee
