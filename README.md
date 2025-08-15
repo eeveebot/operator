@@ -5,7 +5,7 @@ hello operator, can you give me number nine
 ## Manual deployment
 
 ```bash
-kubectl apply -f ./src/dist/install.yaml
+kubectl apply -f ./dist/install.yaml
 ```
 
 ## Deployment with fluxcd
@@ -35,7 +35,7 @@ spec:
     # exclude all
     /*
     # include deploy dir
-    !/src/dist
+    !/dist
 
 # deploy.yaml
 ---
@@ -46,7 +46,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m0s
-  path: ./src/dist
+  path: ./dist
   prune: false
   sourceRef:
     kind: GitRepository
@@ -58,5 +58,6 @@ spec:
 
 ```bash
 # Regenerate deployment manifests
+cd src
 bash ./generate.sh
 ```

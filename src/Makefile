@@ -167,9 +167,8 @@ docker-buildx: ## Build and push docker image for the operator for cross-platfor
 
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
-	mkdir -p dist
 	cd config/operator
-	$(KUSTOMIZE) build config/default > dist/install.yaml
+	$(KUSTOMIZE) build config/default | tee ../dist/install.yaml
 
 ##@ Deployment
 
