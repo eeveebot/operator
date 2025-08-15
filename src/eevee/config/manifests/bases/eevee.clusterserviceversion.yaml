@@ -1,0 +1,50 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    alm-examples: '[]'
+    capabilities: Basic Install
+  name: eevee.v0.0.0
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: Toolbox is the Schema for the toolboxes API
+      displayName: Toolbox
+      kind: Toolbox
+      name: toolboxes.eevee.bot
+      version: v1alpha1
+  description: eevee.bot
+  displayName: eevee
+  icon:
+  - base64data: ""
+    mediatype: ""
+  install:
+    spec:
+      deployments: null
+    strategy: ""
+  installModes:
+  - supported: false
+    type: OwnNamespace
+  - supported: false
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: true
+    type: AllNamespaces
+  keywords:
+  - chatbot
+  - utilitybot
+  - ircbot
+  links:
+  - name: Eevee
+    url: https://eevee.domain
+  maintainers:
+  - email: pers.edwin@gmail.com
+    name: Edwin Pers
+  maturity: alpha
+  provider:
+    name: eevee
+    url: https://eevee.bot
+  version: 0.0.0

@@ -3,7 +3,7 @@ kind: Namespace
 metadata:
   labels:
     control-plane: eevee
-    app.kubernetes.io/name: eevee
+    app.kubernetes.io/name: eevee-operator
     app.kubernetes.io/managed-by: kustomize
   name: system
 ---
@@ -14,7 +14,7 @@ metadata:
   namespace: system
   labels:
     control-plane: eevee
-    app.kubernetes.io/name: eevee
+    app.kubernetes.io/name: eevee-operator
     app.kubernetes.io/managed-by: kustomize
 spec:
   selector:

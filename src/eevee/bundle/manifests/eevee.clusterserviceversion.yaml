@@ -1,0 +1,233 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    alm-examples: |-
+      [
+        {
+          "apiVersion": "eevee.bot/v1alpha1",
+          "kind": "Toolbox",
+          "metadata": {
+            "name": "toolbox",
+            "namespace": "eevee"
+          },
+          "spec": {
+            "containerImage": "ghcr.io/eeveebot/toolbox:latest",
+            "pullPolicy": "Always",
+            "size": 1
+          }
+        }
+      ]
+    capabilities: Basic Install
+    createdAt: "2025-08-15T05:59:01Z"
+    operators.operatorframework.io/builder: operator-sdk-v1.38.0
+    operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
+  name: eevee.v0.0.1
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: Toolbox is the Schema for the toolboxes API
+      displayName: Toolbox
+      kind: Toolbox
+      name: toolboxes.eevee.bot
+      version: v1alpha1
+  description: eevee.bot
+  displayName: eevee
+  icon:
+  - base64data: ""
+    mediatype: ""
+  install:
+    spec:
+      clusterPermissions:
+      - rules:
+        - apiGroups:
+          - apps
+          resources:
+          - deployments
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - ""
+          resources:
+          - events
+          verbs:
+          - create
+          - patch
+        - apiGroups:
+          - ""
+          resources:
+          - pods
+          verbs:
+          - get
+          - list
+          - watch
+        - apiGroups:
+          - eevee.bot
+          resources:
+          - toolboxes
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - eevee.bot
+          resources:
+          - toolboxes/finalizers
+          verbs:
+          - update
+        - apiGroups:
+          - eevee.bot
+          resources:
+          - toolboxes/status
+          verbs:
+          - get
+          - patch
+          - update
+        serviceAccountName: eevee
+      deployments:
+      - label:
+          app.kubernetes.io/managed-by: kustomize
+          app.kubernetes.io/name: eevee
+          control-plane: eevee
+        name: eevee-operator
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              control-plane: eevee
+          strategy: {}
+          template:
+            metadata:
+              annotations:
+                kubectl.kubernetes.io/default-container: manager
+              labels:
+                control-plane: eevee
+            spec:
+              affinity:
+                nodeAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms:
+                    - matchExpressions:
+                      - key: kubernetes.io/arch
+                        operator: In
+                        values:
+                        - amd64
+                        - arm64
+                      - key: kubernetes.io/os
+                        operator: In
+                        values:
+                        - linux
+              containers:
+              - args:
+                - --metrics-bind-address=:8443
+                - --leader-elect
+                - --health-probe-bind-address=:8081
+                command:
+                - /manager
+                env:
+                - name: DEFAULT_TOOLBOX_IMAGE
+                  value: ghcr.io/eeveebot/toolbox:latest
+                image: ghcr.io/eeveebot/operator:latest
+                imagePullPolicy: Always
+                livenessProbe:
+                  httpGet:
+                    path: /healthz
+                    port: 8081
+                  initialDelaySeconds: 15
+                  periodSeconds: 20
+                name: manager
+                readinessProbe:
+                  httpGet:
+                    path: /readyz
+                    port: 8081
+                  initialDelaySeconds: 5
+                  periodSeconds: 10
+                resources:
+                  limits:
+                    cpu: "2"
+                    memory: 512Mi
+                  requests:
+                    cpu: 10m
+                    memory: 64Mi
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop:
+                    - ALL
+              securityContext:
+                runAsNonRoot: true
+                seccompProfile:
+                  type: RuntimeDefault
+              serviceAccountName: eevee
+              terminationGracePeriodSeconds: 10
+      permissions:
+      - rules:
+        - apiGroups:
+          - ""
+          resources:
+          - configmaps
+          verbs:
+          - get
+          - list
+          - watch
+          - create
+          - update
+          - patch
+          - delete
+        - apiGroups:
+          - coordination.k8s.io
+          resources:
+          - leases
+          verbs:
+          - get
+          - list
+          - watch
+          - create
+          - update
+          - patch
+          - delete
+        - apiGroups:
+          - ""
+          resources:
+          - events
+          verbs:
+          - create
+          - patch
+        serviceAccountName: eevee
+    strategy: deployment
+  installModes:
+  - supported: false
+    type: OwnNamespace
+  - supported: false
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: true
+    type: AllNamespaces
+  keywords:
+  - chatbot
+  - utilitybot
+  - ircbot
+  links:
+  - name: Eevee
+    url: https://eevee.domain
+  maintainers:
+  - email: pers.edwin@gmail.com
+    name: Edwin Pers
+  maturity: alpha
+  provider:
+    name: eevee
+    url: https://eevee.bot
+  version: 0.0.1
