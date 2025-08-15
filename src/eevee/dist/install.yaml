@@ -195,7 +195,35 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: eevee-manager-role
+  name: eevee-metrics-auth-role
+rules:
+- apiGroups:
+  - authentication.k8s.io
+  resources:
+  - tokenreviews
+  verbs:
+  - create
+- apiGroups:
+  - authorization.k8s.io
+  resources:
+  - subjectaccessreviews
+  verbs:
+  - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: eevee-metrics-reader
+rules:
+- nonResourceURLs:
+  - /metrics
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: eevee-operator-role
 rules:
 - apiGroups:
   - apps
@@ -250,34 +278,6 @@ rules:
   - get
   - patch
   - update
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: eevee-metrics-auth-role
-rules:
-- apiGroups:
-  - authentication.k8s.io
-  resources:
-  - tokenreviews
-  verbs:
-  - create
-- apiGroups:
-  - authorization.k8s.io
-  resources:
-  - subjectaccessreviews
-  verbs:
-  - create
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: eevee-metrics-reader
-rules:
-- nonResourceURLs:
-  - /metrics
-  verbs:
-  - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -343,24 +343,8 @@ roleRef:
   name: eevee-leader-election-role
 subjects:
 - kind: ServiceAccount
-  name: eevee
+  name: eevee-operator
   namespace: system
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  labels:
-    app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: eevee
-  name: eevee-manager-rolebinding
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: eevee-manager-role
-subjects:
-- kind: ServiceAccount
-  name: eevee
-  namespace: eevee-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -372,8 +356,24 @@ roleRef:
   name: eevee-metrics-auth-role
 subjects:
 - kind: ServiceAccount
-  name: operator
+  name: eevee-operator
   namespace: system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: eevee
+  name: eevee-operator-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: eevee-operator-role
+subjects:
+- kind: ServiceAccount
+  name: eevee-operator
+  namespace: eevee-system
 ---
 apiVersion: v1
 kind: Service
@@ -434,7 +434,7 @@ spec:
         - --leader-elect
         - --health-probe-bind-address=:8081
         command:
-        - /manager
+        - /operator
         env:
         - name: DEFAULT_TOOLBOX_IMAGE
           value: ghcr.io/eeveebot/toolbox:latest
@@ -446,7 +446,7 @@ spec:
             port: 8081
           initialDelaySeconds: 15
           periodSeconds: 20
-        name: manager
+        name: operator
         readinessProbe:
           httpGet:
             path: /readyz
