@@ -469,5 +469,5 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
-      serviceAccountName: eevee
+      serviceAccountName: eevee-operator
       terminationGracePeriodSeconds: 10
