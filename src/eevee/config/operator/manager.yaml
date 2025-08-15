@@ -10,7 +10,7 @@ metadata:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: operator
+  name: eevee-operator
   namespace: system
   labels:
     control-plane: eevee
@@ -24,7 +24,7 @@ spec:
   template:
     metadata:
       annotations:
-        kubectl.kubernetes.io/default-container: manager
+        kubectl.kubernetes.io/default-container: operator
       labels:
         control-plane: eevee
     spec:
@@ -82,5 +82,5 @@ spec:
           requests:
             cpu: 10m
             memory: 64Mi
-      serviceAccountName: operator
+      serviceAccountName: eevee-operator
       terminationGracePeriodSeconds: 10

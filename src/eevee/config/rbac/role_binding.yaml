@@ -4,7 +4,7 @@ metadata:
   labels:
     app.kubernetes.io/name: eevee
     app.kubernetes.io/managed-by: kustomize
-  name: operator-rolebinding
+  name: eevee-operator-rolebinding
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole

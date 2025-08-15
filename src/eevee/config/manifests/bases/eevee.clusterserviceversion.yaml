@@ -4,8 +4,8 @@ metadata:
   annotations:
     alm-examples: '[]'
     capabilities: Basic Install
-  name: eevee.v0.0.0
-  namespace: placeholder
+  name: eevee.v0.0.1
+  namespace: eevee-system
 spec:
   apiservicedefinitions: {}
   customresourcedefinitions:
@@ -38,8 +38,8 @@ spec:
   - utilitybot
   - ircbot
   links:
-  - name: Eevee
-    url: https://eevee.domain
+  - name: eevee
+    url: https://eevee.bot
   maintainers:
   - email: pers.edwin@gmail.com
     name: Edwin Pers
@@ -47,4 +47,4 @@ spec:
   provider:
     name: eevee
     url: https://eevee.bot
-  version: 0.0.0
+  version: 0.0.1

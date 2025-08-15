@@ -157,7 +157,7 @@ metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/name: eevee
-  name: eevee-leader-election-role
+  name: eevee-operator-leader-election-role
   namespace: eevee-system
 rules:
 - apiGroups:
@@ -195,7 +195,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: eevee-metrics-auth-role
+  name: eevee-operator-metrics-auth-role
 rules:
 - apiGroups:
   - authentication.k8s.io
@@ -213,7 +213,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: eevee-metrics-reader
+  name: eevee-operator-metrics-reader
 rules:
 - nonResourceURLs:
   - /metrics
@@ -335,29 +335,29 @@ metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/name: eevee
-  name: eevee-leader-election-rolebinding
+  name: eevee-operator-leader-election-rolebinding
   namespace: eevee-system
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: eevee-leader-election-role
+  name: eevee-operator-leader-election-role
 subjects:
 - kind: ServiceAccount
   name: eevee-operator
-  namespace: system
+  namespace: eevee-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: eevee-metrics-auth-rolebinding
+  name: eevee-operator-metrics-auth-rolebinding
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: eevee-metrics-auth-role
+  name: eevee-operator-metrics-auth-role
 subjects:
 - kind: ServiceAccount
   name: eevee-operator
-  namespace: system
+  namespace: eevee-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -382,7 +382,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/name: eevee
     control-plane: eevee
-  name: eevee-metrics-service
+  name: eevee-operator-metrics-service
   namespace: eevee-system
 spec:
   ports:
@@ -410,7 +410,7 @@ spec:
   template:
     metadata:
       annotations:
-        kubectl.kubernetes.io/default-container: manager
+        kubectl.kubernetes.io/default-container: operator
       labels:
         control-plane: eevee
     spec:

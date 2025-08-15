@@ -5,7 +5,7 @@ metadata:
   labels:
     app.kubernetes.io/name: eevee
     app.kubernetes.io/managed-by: kustomize
-  name: toolbox-editor-role
+  name: eevee-toolbox-editor-role
 rules:
 - apiGroups:
   - eevee.bot

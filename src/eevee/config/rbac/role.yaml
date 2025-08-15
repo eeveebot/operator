@@ -2,7 +2,7 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: operator-role
+  name: eevee-operator-role
 rules:
 - apiGroups:
   - apps
