@@ -435,9 +435,6 @@ spec:
         - --health-probe-bind-address=:8081
         command:
         - /operator
-        env:
-        - name: DEFAULT_TOOLBOX_IMAGE
-          value: ghcr.io/eeveebot/toolbox:latest
         image: ghcr.io/eeveebot/operator:latest
         imagePullPolicy: Always
         livenessProbe:

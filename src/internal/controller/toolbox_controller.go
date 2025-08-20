@@ -3,7 +3,6 @@ package controller
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -24,6 +23,8 @@ import (
 )
 
 const toolboxFinalizer = "eevee.bot/finalizer"
+
+const defaultImageForToolbox = "ghcr.io/eeveebot/toolbox:latest"
 
 // Definitions to manage status conditions
 const (
@@ -268,17 +269,6 @@ func (r *ToolboxReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 // finalizeToolbox will perform the required operations before delete the CR.
 func (r *ToolboxReconciler) doFinalizerOperationsForToolbox(cr *eeveev1alpha1.Toolbox) {
-	// TODO(user): Add the cleanup steps that the operator
-	// needs to do before the CR can be deleted. Examples
-	// of finalizers include performing backups and deleting
-	// resources that are not owned by this CR, like a PVC.
-
-	// Note: It is not recommended to use finalizers with the purpose of deleting resources which are
-	// created and managed in the reconciliation. These ones, such as the Deployment created on this reconcile,
-	// are defined as dependent of the custom resource. See that we use the method ctrl.SetControllerReference.
-	// to set the ownerRef which means that the Deployment will be deleted by the Kubernetes API.
-	// More info: https://kubernetes.io/docs/tasks/administer-cluster/use-cascading-deletion/
-
 	// The following implementation will raise an event
 	r.Recorder.Event(cr, "Warning", "Deleting",
 		fmt.Sprintf("Custom Resource %s is being deleted from the namespace %s",
@@ -293,7 +283,7 @@ func (r *ToolboxReconciler) deploymentForToolbox(
 	replicas := toolbox.Spec.Size
 
 	// Get the Operand image
-	image, nil := defaultImageForToolbox()
+	image := defaultImageForToolbox
 	if len(toolbox.Spec.ContainerImage) != 0 {
 		image = toolbox.Spec.ContainerImage
 	}
@@ -322,14 +312,6 @@ func (r *ToolboxReconciler) deploymentForToolbox(
 					Labels: labels,
 				},
 				Spec: corev1.PodSpec{
-					// TODO(user): Uncomment the following code to configure the nodeAffinity expression
-					// according to the platforms which are supported by your solution. It is considered
-					// best practice to support multiple architectures. build your manager image using the
-					// makefile target docker-buildx. Also, you can use docker manifest inspect <image>
-					// to check what are the platforms supported.
-					// More info: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#node-affinity
-
-					// Only linux/amd64 for now
 					Affinity: &corev1.Affinity{
 						NodeAffinity: &corev1.NodeAffinity{
 							RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
@@ -356,9 +338,6 @@ func (r *ToolboxReconciler) deploymentForToolbox(
 						RunAsNonRoot: &[]bool{true}[0],
 						RunAsUser:    &[]int64{1000}[0],
 						RunAsGroup:   &[]int64{1000}[0],
-						// IMPORTANT: seccomProfile was introduced with Kubernetes 1.19
-						// If you are looking for to produce solutions to be supported
-						// on lower versions you must remove this option.
 						SeccompProfile: &corev1.SeccompProfile{
 							Type: corev1.SeccompProfileTypeRuntimeDefault,
 						},
@@ -400,19 +379,8 @@ func labelsForToolbox(name string, image string) map[string]string {
 	return map[string]string{
 		"app.kubernetes.io/name":       name,
 		"app.kubernetes.io/version":    imageTag,
-		"app.kubernetes.io/managed-by": "ToolboxController",
+		"app.kubernetes.io/managed-by": "eevee-operator",
 	}
-}
-
-// imageForToolbox gets the Operand image which is managed by this controller
-// from the TOOLBOX_IMAGE environment variable defined in the config/manager/manager.yaml
-func defaultImageForToolbox() (string, error) {
-	var imageEnvVar = "DEFAULT_TOOLBOX_IMAGE"
-	image, found := os.LookupEnv(imageEnvVar)
-	if !found {
-		return "", fmt.Errorf("unable to find %s environment variable with the default image", imageEnvVar)
-	}
-	return image, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

@@ -51,7 +51,6 @@ spec:
   sourceRef:
     kind: GitRepository
     name: eevee-operator
-
 ```
 
 ## Helpful commands
