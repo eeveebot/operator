@@ -22,13 +22,6 @@ resources:
 - api:
     crdVersion: v1
     namespaced: true
-  domain: bot
-  group: eevee
-  kind: Nats
-  version: v1alpha1
-- api:
-    crdVersion: v1
-    namespaced: true
   controller: true
   domain: bot
   group: eevee
