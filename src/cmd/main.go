@@ -66,6 +66,10 @@ func init() {
 }
 
 func main() {
+	// Of vital importance
+	fmt.Println(logo)
+
+	// Setup some variables
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
@@ -175,8 +179,6 @@ func main() {
 		setupLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
 	}
-
-	fmt.Println(logo)
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
