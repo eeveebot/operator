@@ -4,21 +4,24 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // ConnectorIrcSpec defines the desired state of ConnectorIrc
 type ConnectorIrcSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
 	// Size defines the number of ConnectorIrc instances
 	// The following markers will use OpenAPI v3 schema to validate the value
 	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
 	// +kubebuilder:validation:Minimum=1
-	// +kubebuilder:validation:Maximum=3
+	// +kubebuilder:validation:Maximum=1
 	// +kubebuilder:validation:ExclusiveMaximum=false
+	// +kubebuilder:default=1
 	Size int32 `json:"size,omitempty"`
+
+	// ContainerImage defines the container image to use
+	// +kubebuilder:default="ghcr.io/eeveebot/connector-irc:latest"
+	ContainerImage string `json:"containerImage,omitempty"`
+
+	// PullPolicy defines the imagepullpolicy to use
+	// +kubebuilder:default=Always
+	PullPolicy string `json:"pullPolicy,omitempty"`
 }
 
 // ConnectorIrcStatus defines the observed state of ConnectorIrc

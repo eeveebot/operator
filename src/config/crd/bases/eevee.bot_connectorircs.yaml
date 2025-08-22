@@ -39,13 +39,22 @@ spec:
           spec:
             description: ConnectorIrcSpec defines the desired state of ConnectorIrc
             properties:
+              containerImage:
+                default: ghcr.io/eeveebot/connector-irc:latest
+                description: ContainerImage defines the container image to use
+                type: string
+              pullPolicy:
+                default: Always
+                description: PullPolicy defines the imagepullpolicy to use
+                type: string
               size:
+                default: 1
                 description: |-
                   Size defines the number of ConnectorIrc instances
                   The following markers will use OpenAPI v3 schema to validate the value
                   More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
                 format: int32
-                maximum: 3
+                maximum: 1
                 minimum: 1
                 type: integer
             type: object

@@ -1,11 +1,16 @@
 apiVersion: eevee.bot/v1alpha1
 kind: ConnectorIrc
 metadata:
-  labels:
-    app.kubernetes.io/name: eevee
-    app.kubernetes.io/managed-by: kustomize
-  name: connectorirc-sample
+  name: connector-irc
+  namespace: my-eevee-bot
 spec:
-  # TODO(user): edit the following value to ensure the number
-  # of Pods/Instances your Operand must have on cluster
+  # Number of connector-irc replicas to deploy
+  # NOTE: only 1 is supported at this time
   size: 1
+
+  # Override container image
+  containerImage: ghcr.io/eeveebot/connector-irc:latest
+
+  # Override pull policy
+  # Defaults to IfNotPresent
+  pullPolicy: Always

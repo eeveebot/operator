@@ -3,7 +3,6 @@ package controller
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -25,6 +24,8 @@ import (
 )
 
 const connectorircFinalizer = "eevee.bot/finalizer"
+
+const defaultImageForConnectorIrc = "ghcr.io/eeveebot/connector-irc:latest"
 
 // Definitions to manage status conditions
 const (
@@ -296,9 +297,16 @@ func (r *ConnectorIrcReconciler) deploymentForConnectorIrc(
 	replicas := connectorirc.Spec.Size
 
 	// Get the Operand image
-	image, err := imageForConnectorIrc()
-	if err != nil {
-		return nil, err
+	image := defaultImageForConnectorIrc
+	if len(connectorirc.Spec.ContainerImage) != 0 {
+		image = connectorirc.Spec.ContainerImage
+	}
+
+	// Get the pull policy
+	pullPolicy := corev1.PullIfNotPresent
+	pullPolicyString := connectorirc.Spec.PullPolicy
+	if pullPolicyString == "Always" {
+		pullPolicy = corev1.PullAlways
 	}
 
 	dep := &appsv1.Deployment{
@@ -322,41 +330,38 @@ func (r *ConnectorIrcReconciler) deploymentForConnectorIrc(
 					// makefile target docker-buildx. Also, you can use docker manifest inspect <image>
 					// to check what are the platforms supported.
 					// More info: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#node-affinity
-					// Affinity: &corev1.Affinity{
-					//	 NodeAffinity: &corev1.NodeAffinity{
-					//		 RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
-					//			 NodeSelectorTerms: []corev1.NodeSelectorTerm{
-					//				 {
-					//					 MatchExpressions: []corev1.NodeSelectorRequirement{
-					//						 {
-					//							 Key:      "kubernetes.io/arch",
-					//							 Operator: "In",
-					//							 Values:   []string{"amd64", "arm64", "ppc64le", "s390x"},
-					//						 },
-					//						 {
-					//							 Key:      "kubernetes.io/os",
-					//							 Operator: "In",
-					//							 Values:   []string{"linux"},
-					//						 },
-					//					 },
-					//				 },
-					//		 	 },
-					//		 },
-					//	 },
-					// },
+					Affinity: &corev1.Affinity{
+						NodeAffinity: &corev1.NodeAffinity{
+							RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+								NodeSelectorTerms: []corev1.NodeSelectorTerm{
+									{
+										MatchExpressions: []corev1.NodeSelectorRequirement{
+											{
+												Key:      "kubernetes.io/arch",
+												Operator: "In",
+												Values:   []string{"amd64", "arm64", "ppc64le", "s390x"},
+											},
+											{
+												Key:      "kubernetes.io/os",
+												Operator: "In",
+												Values:   []string{"linux"},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
 					SecurityContext: &corev1.PodSecurityContext{
 						RunAsNonRoot: ptr.To(true),
-						// IMPORTANT: seccomProfile was introduced with Kubernetes 1.19
-						// If you are looking for to produce solutions to be supported
-						// on lower versions you must remove this option.
 						SeccompProfile: &corev1.SeccompProfile{
 							Type: corev1.SeccompProfileTypeRuntimeDefault,
 						},
 					},
 					Containers: []corev1.Container{{
 						Image:           image,
-						Name:            "connectorirc",
-						ImagePullPolicy: corev1.PullIfNotPresent,
+						Name:            "connector-irc",
+						ImagePullPolicy: pullPolicy,
 						// Ensure restrictive context for the container
 						// More info: https://kubernetes.io/docs/concepts/security/pod-security-standards/#restricted
 						SecurityContext: &corev1.SecurityContext{
@@ -385,28 +390,14 @@ func (r *ConnectorIrcReconciler) deploymentForConnectorIrc(
 
 // labelsForConnectorIrc returns the labels for selecting the resources
 // More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/
-func labelsForConnectorIrc() map[string]string {
-	var imageTag string
-	image, err := imageForConnectorIrc()
-	if err == nil {
-		imageTag = strings.Split(image, ":")[1]
-	}
-	return map[string]string{
-		"app.kubernetes.io/name":       "eevee",
-		"app.kubernetes.io/version":    imageTag,
-		"app.kubernetes.io/managed-by": "ConnectorIrcController",
-	}
-}
+func labelsForConnectorIrc(name string, image string) map[string]string {
+	imageTag := strings.Split(image, ":")[1]
 
-// imageForConnectorIrc gets the Operand image which is managed by this controller
-// from the CONNECTORIRC_IMAGE environment variable defined in the config/manager/manager.yaml
-func imageForConnectorIrc() (string, error) {
-	var imageEnvVar = "CONNECTORIRC_IMAGE"
-	image, found := os.LookupEnv(imageEnvVar)
-	if !found {
-		return "", fmt.Errorf("unable to find %s environment variable with the image", imageEnvVar)
+	return map[string]string{
+		"app.kubernetes.io/name":       name,
+		"app.kubernetes.io/version":    imageTag,
+		"app.kubernetes.io/managed-by": "eevee-operator",
 	}
-	return image, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

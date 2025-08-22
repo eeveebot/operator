@@ -55,6 +55,7 @@ spec:
         image: ghcr.io/eeveebot/operator:latest
         imagePullPolicy: "Always"
         name: operator
+        env: []
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:

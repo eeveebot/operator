@@ -4,9 +4,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // ToolboxSpec defines the desired state of Toolbox
 type ToolboxSpec struct {
 	// Size defines the number of Toolbox instances
@@ -15,12 +12,15 @@ type ToolboxSpec struct {
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=3
 	// +kubebuilder:validation:ExclusiveMaximum=false
+	// +kubebuilder:default=1
 	Size int32 `json:"size,omitempty"`
 
 	// ContainerImage defines the container image to use
+	// +kubebuilder:default="ghcr.io/eeveebot/toolbox:latest"
 	ContainerImage string `json:"containerImage,omitempty"`
 
 	// PullPolicy defines the imagepullpolicy to use
+	// +kubebuilder:default=Always
 	PullPolicy string `json:"pullPolicy,omitempty"`
 }
 

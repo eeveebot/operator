@@ -388,7 +388,13 @@ func labelsForToolbox(name string, image string) map[string]string {
 // desirable state on the cluster
 func (r *ToolboxReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
+		// Watch the ConnectorIrc CR(s) and trigger reconciliation whenever it
+		// is created, updated, or deleted
 		For(&eeveev1alpha1.Toolbox{}).
+		Named("toolbox").
+		// Watch the Deployment managed by the ConnectorIrcReconciler. If any changes occur to the Deployment
+		// owned and managed by this controller, it will trigger reconciliation, ensuring that the cluster
+		// state aligns with the desired state. See that the ownerRef was set when the Deployment was created.
 		Owns(&appsv1.Deployment{}).
 		Complete(r)
 }
