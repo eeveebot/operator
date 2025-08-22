@@ -161,7 +161,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controller.ToolboxReconciler{
+	if err = (&eeveecontroller.ToolboxReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
 		Recorder: mgr.GetEventRecorderFor("toolbox-controller"),
