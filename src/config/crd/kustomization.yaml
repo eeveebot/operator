@@ -3,4 +3,5 @@
 # It should be run by config/default
 resources:
 - bases/eevee.bot_toolboxes.yaml
+- bases/eevee.bot_connectorircs.yaml
 # +kubebuilder:scaffold:crdkustomizeresource

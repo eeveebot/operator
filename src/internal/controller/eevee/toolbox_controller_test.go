@@ -16,7 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	eeveev1alpha1 "github.com/eeveebot/operator/api/v1alpha1"
+	eeveev1alpha1 "github.com/eeveebot/operator/api/eevee/v1alpha1"
 )
 
 var _ = Describe("Toolbox controller", func() {

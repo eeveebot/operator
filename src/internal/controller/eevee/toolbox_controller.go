@@ -19,7 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	eeveev1alpha1 "github.com/eeveebot/operator/api/v1alpha1"
+	eeveev1alpha1 "github.com/eeveebot/operator/api/eevee/v1alpha1"
 )
 
 const toolboxFinalizer = "eevee.bot/finalizer"

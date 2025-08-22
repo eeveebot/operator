@@ -25,3 +25,10 @@ resources:
 - toolbox_editor_role.yaml
 - toolbox_viewer_role.yaml
 
+# For each CRD, "Admin", "Editor" and "Viewer" roles are scaffolded by
+# default, aiding admins in cluster management. Those roles are
+# not used by the eevee itself. You can comment the following lines
+# if you do not want those helpers be installed with your Project.
+- eevee_connectorirc_admin_role.yaml
+- eevee_connectorirc_editor_role.yaml
+- eevee_connectorirc_viewer_role.yaml

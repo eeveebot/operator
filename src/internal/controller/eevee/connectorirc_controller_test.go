@@ -1,0 +1,133 @@
+package controller
+
+import (
+	"context"
+	"os"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	eeveev1alpha1 "github.com/eeveebot/operator/api/eevee/v1alpha1"
+)
+
+var _ = Describe("ConnectorIrc controller", func() {
+	Context("ConnectorIrc controller test", func() {
+
+		const ConnectorIrcName = "test-connectorirc"
+
+		ctx := context.Background()
+
+		namespace := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      ConnectorIrcName,
+				Namespace: ConnectorIrcName,
+			},
+		}
+
+		typeNamespacedName := types.NamespacedName{
+			Name:      ConnectorIrcName,
+			Namespace: ConnectorIrcName,
+		}
+		connectorirc := &eeveev1alpha1.ConnectorIrc{}
+
+		SetDefaultEventuallyTimeout(2 * time.Minute)
+		SetDefaultEventuallyPollingInterval(time.Second)
+
+		BeforeEach(func() {
+			By("Creating the Namespace to perform the tests")
+			err := k8sClient.Create(ctx, namespace)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Setting the Image ENV VAR which stores the Operand image")
+			err = os.Setenv("CONNECTORIRC_IMAGE", "example.com/image:test")
+			Expect(err).NotTo(HaveOccurred())
+
+			By("creating the custom resource for the Kind ConnectorIrc")
+			err = k8sClient.Get(ctx, typeNamespacedName, connectorirc)
+			if err != nil && errors.IsNotFound(err) {
+				// Let's mock our custom resource at the same way that we would
+				// apply on the cluster the manifest under config/samples
+				connectorirc := &eeveev1alpha1.ConnectorIrc{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      ConnectorIrcName,
+						Namespace: namespace.Name,
+					},
+					Spec: eeveev1alpha1.ConnectorIrcSpec{
+						Size: 1,
+					},
+				}
+
+				err = k8sClient.Create(ctx, connectorirc)
+				Expect(err).NotTo(HaveOccurred())
+			}
+		})
+
+		AfterEach(func() {
+			By("removing the custom resource for the Kind ConnectorIrc")
+			found := &eeveev1alpha1.ConnectorIrc{}
+			err := k8sClient.Get(ctx, typeNamespacedName, found)
+			Expect(err).NotTo(HaveOccurred())
+
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Delete(context.TODO(), found)).To(Succeed())
+			}).Should(Succeed())
+
+			// TODO(user): Attention if you improve this code by adding other context test you MUST
+			// be aware of the current delete namespace limitations.
+			// More info: https://book.kubebuilder.io/reference/envtest.html#testing-considerations
+			By("Deleting the Namespace to perform the tests")
+			_ = k8sClient.Delete(ctx, namespace)
+
+			By("Removing the Image ENV VAR which stores the Operand image")
+			_ = os.Unsetenv("CONNECTORIRC_IMAGE")
+		})
+
+		It("should successfully reconcile a custom resource for ConnectorIrc", func() {
+			By("Checking if the custom resource was successfully created")
+			Eventually(func(g Gomega) {
+				found := &eeveev1alpha1.ConnectorIrc{}
+				Expect(k8sClient.Get(ctx, typeNamespacedName, found)).To(Succeed())
+			}).Should(Succeed())
+
+			By("Reconciling the custom resource created")
+			connectorircReconciler := &ConnectorIrcReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			_, err := connectorircReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Checking if Deployment was successfully created in the reconciliation")
+			Eventually(func(g Gomega) {
+				found := &appsv1.Deployment{}
+				g.Expect(k8sClient.Get(ctx, typeNamespacedName, found)).To(Succeed())
+			}).Should(Succeed())
+
+			By("Reconciling the custom resource again")
+			_, err = connectorircReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Checking the latest Status Condition added to the ConnectorIrc instance")
+			Expect(k8sClient.Get(ctx, typeNamespacedName, connectorirc)).To(Succeed())
+			var conditions []metav1.Condition
+			Expect(connectorirc.Status.Conditions).To(ContainElement(
+				HaveField("Type", Equal(typeAvailableConnectorIrc)), &conditions))
+			Expect(conditions).To(HaveLen(1), "Multiple conditions of type %s", typeAvailableConnectorIrc)
+			Expect(conditions[0].Status).To(Equal(metav1.ConditionTrue), "condition %s", typeAvailableConnectorIrc)
+			Expect(conditions[0].Reason).To(Equal("Reconciling"), "condition %s", typeAvailableConnectorIrc)
+		})
+	})
+})

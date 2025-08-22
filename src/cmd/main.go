@@ -20,8 +20,8 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	eeveev1alpha1 "github.com/eeveebot/operator/api/v1alpha1"
-	"github.com/eeveebot/operator/internal/controller"
+	eeveev1alpha1 "github.com/eeveebot/operator/api/eevee/v1alpha1"
+	eeveecontroller "github.com/eeveebot/operator/internal/controller/eevee"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -167,6 +167,14 @@ func main() {
 		Recorder: mgr.GetEventRecorderFor("toolbox-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Toolbox")
+		os.Exit(1)
+	}
+	if err := (&eeveecontroller.ConnectorIrcReconciler{
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("connectorirc-controller"),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ConnectorIrc")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
