@@ -1,3 +1,4 @@
+---
 apiVersion: eevee.bot/v1alpha1
 kind: ConnectorIrc
 metadata:
@@ -14,3 +15,30 @@ spec:
   # Override pull policy
   # Defaults to IfNotPresent
   pullPolicy: Always
+
+  # Setup IRC Connections
+  connections:
+    - name: wetfish
+      irc:
+        host: irc.wetfish.net
+        port: 6697
+        ssl: true
+        autoReconnect: true
+        autoReconnectWait: 5000
+        autoReconnectMaxRetries: 10
+        autoRejoin: true
+        autoRejoinWait: 5000
+        autoRejoinMaxRetries: 5
+        pingInterval: 30
+        pingTimeout: 120
+
+      ident:
+        nick: eevee-ng
+        username: eevee
+        gecos: eevee.bot
+        version: "0.4.20"
+
+      postConnect:
+        join:
+          - channel: '#eevee'
+            password: ''

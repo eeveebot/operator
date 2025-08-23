@@ -272,11 +272,6 @@ func (r *ConnectorIrcReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 // finalizeConnectorIrc will perform the required operations before delete the CR.
 func (r *ConnectorIrcReconciler) doFinalizerOperationsForConnectorIrc(cr *eeveev1alpha1.ConnectorIrc) {
-	// TODO(user): Add the cleanup steps that the operator
-	// needs to do before the CR can be deleted. Examples
-	// of finalizers include performing backups and deleting
-	// resources that are not owned by this CR, like a PVC.
-
 	// Note: It is not recommended to use finalizers with the purpose of deleting resources which are
 	// created and managed in the reconciliation. These ones, such as the Deployment created on this reconcile,
 	// are defined as dependent of the custom resource. See that we use the method ctrl.SetControllerReference.
@@ -293,7 +288,7 @@ func (r *ConnectorIrcReconciler) doFinalizerOperationsForConnectorIrc(cr *eeveev
 // deploymentForConnectorIrc returns a ConnectorIrc Deployment object
 func (r *ConnectorIrcReconciler) deploymentForConnectorIrc(
 	connectorirc *eeveev1alpha1.ConnectorIrc) (*appsv1.Deployment, error) {
-	ls := labelsForConnectorIrc()
+
 	replicas := connectorirc.Spec.Size
 
 	// Get the Operand image
@@ -301,6 +296,9 @@ func (r *ConnectorIrcReconciler) deploymentForConnectorIrc(
 	if len(connectorirc.Spec.ContainerImage) != 0 {
 		image = connectorirc.Spec.ContainerImage
 	}
+
+	// Get common labels for the deployment
+	labels := labelsForConnectorIrc(connectorirc.Name, image)
 
 	// Get the pull policy
 	pullPolicy := corev1.PullIfNotPresent
@@ -317,19 +315,13 @@ func (r *ConnectorIrcReconciler) deploymentForConnectorIrc(
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
 			Selector: &metav1.LabelSelector{
-				MatchLabels: ls,
+				MatchLabels: labels,
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: ls,
+					Labels: labels,
 				},
 				Spec: corev1.PodSpec{
-					// TODO(user): Uncomment the following code to configure the nodeAffinity expression
-					// according to the platforms which are supported by your solution. It is considered
-					// best practice to support multiple architectures. build your manager image using the
-					// makefile target docker-buildx. Also, you can use docker manifest inspect <image>
-					// to check what are the platforms supported.
-					// More info: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#node-affinity
 					Affinity: &corev1.Affinity{
 						NodeAffinity: &corev1.NodeAffinity{
 							RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
@@ -414,7 +406,7 @@ func (r *ConnectorIrcReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// Watch the ConnectorIrc CR(s) and trigger reconciliation whenever it
 		// is created, updated, or deleted
 		For(&eeveev1alpha1.ConnectorIrc{}).
-		Named("eevee-connectorirc").
+		Named("connectorirc").
 		// Watch the Deployment managed by the ConnectorIrcReconciler. If any changes occur to the Deployment
 		// owned and managed by this controller, it will trigger reconciliation, ensuring that the cluster
 		// state aligns with the desired state. See that the ownerRef was set when the Deployment was created.

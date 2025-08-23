@@ -4,6 +4,80 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// IrcConnectionSpec defines the configuration for a single IRC connection
+type IrcConnectionSpec struct {
+	Name        string                  `json:"name,omitempty"`
+	IRCSpec     IRCServerConnectionSpec `json:"irc,omitempty"`
+	Ident       IdentSpec               `json:"ident,omitempty"`
+	PostConnect PostConnectSpec         `json:"postConnect,omitempty"`
+}
+
+// IRCSpec defines the detailed IRC configuration
+type IRCServerConnectionSpec struct {
+	Host                    string `json:"host,omitempty"`
+	Port                    int    `json:"port,omitempty"`
+	SSL                     bool   `json:"ssl,omitempty"`
+	AutoReconnect           bool   `json:"autoReconnect,omitempty"`
+	AutoReconnectWait       int    `json:"autoReconnectWait,omitempty"`
+	AutoReconnectMaxRetries int    `json:"autoReconnectMaxRetries,omitempty"`
+	AutoRejoin              bool   `json:"autoRejoin,omitempty"`
+	AutoRejoinWait          int    `json:"autoRejoinWait,omitempty"`
+	AutoRejoinMaxRetries    int    `json:"autoRejoinMaxRetries,omitempty"`
+	PingInterval            int    `json:"pingInterval,omitempty"`
+	PingTimeout             int    `json:"pingTimeout,omitempty"`
+}
+
+// IdentSpec defines the IRC ident configuration
+type IdentSpec struct {
+	Nick     string `json:"nick,omitempty"`
+	Username string `json:"username,omitempty"`
+	Gecos    string `json:"gecos,omitempty"`
+	Version  string `json:"version,omitempty"`
+}
+
+// PostConnectSpec defines the post-connect actions
+type PostConnectSpec struct {
+	Join    []JoinSpec            `json:"join,omitempty"`
+	Message []PostJoinMessageSpec `json:"message,omitempty"`
+	Mode    []PostJoinModeSpec    `json:"mode,omitempty"`
+	Raw     []PostJoinRawSpec     `json:"raw,omitempty"`
+}
+
+// MessageSpec defines the message actions
+type PostJoinMessageSpec struct {
+	Target string `json:"target,omitempty"`
+	Msg    string `json:"msg,omitempty"`
+}
+
+// ModeSpec defines the mode actions
+type PostJoinModeSpec struct {
+	Target string `json:"target,omitempty"`
+	Mode   string `json:"mode,omitempty"`
+}
+
+// RawSpec defines the raw actions
+type PostJoinRawSpec struct {
+	Sequence int    `json:"sequence,omitempty"`
+	Raw      string `json:"raw,omitempty"`
+}
+
+// JoinSpec defines the join actions
+type JoinSpec struct {
+	Channels []ChannelSpec `json:"channels,omitempty"`
+	Password string        `json:"password,omitempty"`
+}
+
+// ChannelSpec defines the channels to join
+type ChannelSpec struct {
+	Channel string `json:"channel,omitempty"`
+	Key     string `json:"key,omitempty"`
+}
+
+// Config defines the configuration object
+type Config struct {
+	Connections []IrcConnectionSpec `json:"connections,omitempty"`
+}
+
 // ConnectorIrcSpec defines the desired state of ConnectorIrc
 type ConnectorIrcSpec struct {
 	// Size defines the number of ConnectorIrc instances
@@ -22,6 +96,9 @@ type ConnectorIrcSpec struct {
 	// PullPolicy defines the imagepullpolicy to use
 	// +kubebuilder:default=Always
 	PullPolicy string `json:"pullPolicy,omitempty"`
+
+	// Config holds additional configuration settings
+	Config Config `json:"config,omitempty"`
 }
 
 // ConnectorIrcStatus defines the observed state of ConnectorIrc
