@@ -95,7 +95,7 @@ type ConnectorIrcSpec struct {
 	PullPolicy string `json:"pullPolicy,omitempty"`
 
 	// Connections defines IRC Connections for the connector
-	Connections []IrcConnectionSpec `json:"connections,omitempty"`
+	Connections []IrcConnectionSpec `json:"ircConnections,omitempty"`
 }
 
 // ConnectorIrcStatus defines the observed state of ConnectorIrc

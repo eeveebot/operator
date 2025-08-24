@@ -182,7 +182,7 @@ func (r *ConnectorIrcReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	// Create a JSON representation of the connections
 	connectionsJson, err := json.Marshal(map[string]interface{}{
-		"connections": connectorirc.Spec.Connections,
+		"ircConnections": connectorirc.Spec.Connections,
 	})
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to marshal connections to JSON: %w", err)
@@ -201,7 +201,7 @@ func (r *ConnectorIrcReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			Namespace: connectorirc.Namespace,
 		},
 		StringData: map[string]string{
-			"connections.yaml": string(connectionsYaml),
+			"ircConnections.yaml": string(connectionsYaml),
 		},
 	}
 

@@ -17,8 +17,8 @@ spec:
   pullPolicy: Always
 
   # Setup IRC Connections
-  connections:
-  - name: wetfish
+  ircConnections:
+  - name: eeveebot
     irc:
       host: irc.eevee.bot
       port: 6697
