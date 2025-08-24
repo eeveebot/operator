@@ -43,4 +43,4 @@ spec:
       join:
         - sequence: 1
           channel: '#eevee'
-          password: ''
+          key: ''
