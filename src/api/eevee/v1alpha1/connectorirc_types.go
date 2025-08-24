@@ -44,36 +44,31 @@ type PostConnectSpec struct {
 	Raw     []PostConnectRawSpec     `json:"raw,omitempty"`
 }
 
-// MessageSpec defines the message actions
+// PostConnectJoinSpec defines the join actions
+type PostConnectJoinSpec struct {
+	Sequence int    `json:"sequence,omitempty"`
+	Channel  string `json:"channel,omitempty"`
+	Key      string `json:"key,omitempty"`
+}
+
+// PostConnectMessageSpec defines the message actions
 type PostConnectMessageSpec struct {
 	Sequence int    `json:"sequence,omitempty"`
 	Target   string `json:"target,omitempty"`
 	Msg      string `json:"msg,omitempty"`
 }
 
-// ModeSpec defines the mode actions
+// PostConnectModeSpec defines the mode actions
 type PostConnectModeSpec struct {
 	Sequence int    `json:"sequence,omitempty"`
 	Target   string `json:"target,omitempty"`
 	Mode     string `json:"mode,omitempty"`
 }
 
-// RawSpec defines the raw actions
+// PostConnectRawSpec defines the raw actions
 type PostConnectRawSpec struct {
 	Sequence int    `json:"sequence,omitempty"`
 	Raw      string `json:"raw,omitempty"`
-}
-
-// JoinSpec defines the join actions
-type PostConnectJoinSpec struct {
-	Sequence int           `json:"sequence,omitempty"`
-	Channels []ChannelSpec `json:"channels,omitempty"`
-}
-
-// ChannelSpec defines the channels to join
-type ChannelSpec struct {
-	Channel string `json:"channel,omitempty"`
-	Key     string `json:"key,omitempty"`
 }
 
 // ConnectorIrcSpec defines the desired state of ConnectorIrc

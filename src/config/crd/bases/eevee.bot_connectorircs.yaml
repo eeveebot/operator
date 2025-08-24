@@ -101,26 +101,20 @@ spec:
                       properties:
                         join:
                           items:
-                            description: JoinSpec defines the join actions
+                            description: PostConnectJoinSpec defines the join actions
                             properties:
-                              channels:
-                                items:
-                                  description: ChannelSpec defines the channels to
-                                    join
-                                  properties:
-                                    channel:
-                                      type: string
-                                    key:
-                                      type: string
-                                  type: object
-                                type: array
+                              channel:
+                                type: string
+                              key:
+                                type: string
                               sequence:
                                 type: integer
                             type: object
                           type: array
                         message:
                           items:
-                            description: MessageSpec defines the message actions
+                            description: PostConnectMessageSpec defines the message
+                              actions
                             properties:
                               msg:
                                 type: string
@@ -132,7 +126,7 @@ spec:
                           type: array
                         mode:
                           items:
-                            description: ModeSpec defines the mode actions
+                            description: PostConnectModeSpec defines the mode actions
                             properties:
                               mode:
                                 type: string
@@ -144,7 +138,7 @@ spec:
                           type: array
                         raw:
                           items:
-                            description: RawSpec defines the raw actions
+                            description: PostConnectRawSpec defines the raw actions
                             properties:
                               raw:
                                 type: string
