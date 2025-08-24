@@ -18,7 +18,7 @@ spec:
 
   # Setup IRC Connections
   ircConnections:
-  - name: eeveebot
+  - name: localhost
     irc:
       host: localhost
       port: 6667

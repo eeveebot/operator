@@ -443,7 +443,7 @@ func (r *ConnectorIrcReconciler) deploymentForConnectorIrc(
 						VolumeMounts: []corev1.VolumeMount{
 							{
 								Name:      "connector-irc-config",
-								MountPath: "/eevee/etc/connections.yaml",
+								MountPath: "/eevee/etc/",
 								SubPath:   "connections.yaml",
 								ReadOnly:  true,
 							},
