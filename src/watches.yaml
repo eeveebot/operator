@@ -1,0 +1,6 @@
+---
+- group: eevee
+  version: v1alpha1
+  kind: NatsCluster
+  chart: helm-charts/nats
+#+kubebuilder:scaffold:watch

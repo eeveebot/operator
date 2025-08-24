@@ -29,4 +29,11 @@ resources:
   kind: Toolbox
   path: github.com/eeveebot/operator/api/v1alpha1
   version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: bot
+  group: eevee
+  kind: NatsCluster
+  version: v1alpha1
 version: "3"

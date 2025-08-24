@@ -2,4 +2,5 @@
 resources:
 - eevee_v1alpha1_toolbox.yaml
 - eevee_v1alpha1_connectorirc.yaml
+- eevee_v1alpha1_natscluster.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples
