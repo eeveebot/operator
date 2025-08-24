@@ -12,7 +12,7 @@ type IrcConnectionSpec struct {
 	PostConnect PostConnectSpec         `json:"postConnect,omitempty"`
 }
 
-// IRCSpec defines the detailed IRC configuration
+// IRCServerConnectionSpec defines the detailed IRC Connection configuration
 type IRCServerConnectionSpec struct {
 	Host                    string `json:"host,omitempty"`
 	Port                    int    `json:"port,omitempty"`
@@ -37,45 +37,42 @@ type IdentSpec struct {
 
 // PostConnectSpec defines the post-connect actions
 type PostConnectSpec struct {
-	Join    []JoinSpec            `json:"join,omitempty"`
-	Message []PostJoinMessageSpec `json:"message,omitempty"`
-	Mode    []PostJoinModeSpec    `json:"mode,omitempty"`
-	Raw     []PostJoinRawSpec     `json:"raw,omitempty"`
+	Join    []PostConnectJoinSpec    `json:"join,omitempty"`
+	Message []PostConnectMessageSpec `json:"message,omitempty"`
+	Mode    []PostConnectModeSpec    `json:"mode,omitempty"`
+	Raw     []PostConnectRawSpec     `json:"raw,omitempty"`
 }
 
 // MessageSpec defines the message actions
-type PostJoinMessageSpec struct {
-	Target string `json:"target,omitempty"`
-	Msg    string `json:"msg,omitempty"`
+type PostConnectMessageSpec struct {
+	Sequence int    `json:"sequence,omitempty"`
+	Target   string `json:"target,omitempty"`
+	Msg      string `json:"msg,omitempty"`
 }
 
 // ModeSpec defines the mode actions
-type PostJoinModeSpec struct {
-	Target string `json:"target,omitempty"`
-	Mode   string `json:"mode,omitempty"`
+type PostConnectModeSpec struct {
+	Sequence int    `json:"sequence,omitempty"`
+	Target   string `json:"target,omitempty"`
+	Mode     string `json:"mode,omitempty"`
 }
 
 // RawSpec defines the raw actions
-type PostJoinRawSpec struct {
+type PostConnectRawSpec struct {
 	Sequence int    `json:"sequence,omitempty"`
 	Raw      string `json:"raw,omitempty"`
 }
 
 // JoinSpec defines the join actions
-type JoinSpec struct {
+type PostConnectJoinSpec struct {
+	Sequence int           `json:"sequence,omitempty"`
 	Channels []ChannelSpec `json:"channels,omitempty"`
-	Password string        `json:"password,omitempty"`
 }
 
 // ChannelSpec defines the channels to join
 type ChannelSpec struct {
 	Channel string `json:"channel,omitempty"`
 	Key     string `json:"key,omitempty"`
-}
-
-// Config defines the configuration object
-type Config struct {
-	Connections []IrcConnectionSpec `json:"connections,omitempty"`
 }
 
 // ConnectorIrcSpec defines the desired state of ConnectorIrc
@@ -97,8 +94,8 @@ type ConnectorIrcSpec struct {
 	// +kubebuilder:default=Always
 	PullPolicy string `json:"pullPolicy,omitempty"`
 
-	// Config holds additional configuration settings
-	Config Config `json:"config,omitempty"`
+	// Connections defines IRC Connections for the connector
+	Connections []IrcConnectionSpec `json:"connections,omitempty"`
 }
 
 // ConnectorIrcStatus defines the observed state of ConnectorIrc

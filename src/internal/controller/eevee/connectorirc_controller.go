@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/yaml"
 
 	eeveev1alpha1 "github.com/eeveebot/operator/api/eevee/v1alpha1"
 )
@@ -178,12 +180,45 @@ func (r *ConnectorIrcReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, nil
 	}
 
+	// Create a JSON representation of the connections
+	connectionsJson, err := json.Marshal(connectorirc.Spec.Connections)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to marshal connections to JSON: %w", err)
+	}
+
+	// Convert JSON to YAML
+	connectionsYaml, err := yaml.JSONToYAML(connectionsJson)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to convert connections JSON to YAML: %w", err)
+	}
+
+	// Create a secret from the connection details
+	connectionsSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      connectorirc.Name + "-connections-config",
+			Namespace: connectorirc.Namespace,
+		},
+		StringData: map[string]string{
+			"connections.yaml": string(connectionsYaml),
+		},
+	}
+
+	// Ensure the secret exists
+	opResult, err := controllerutil.CreateOrUpdate(context.Background(), r.Client, connectionsSecret, func() error {
+		return controllerutil.SetControllerReference(connectorirc, connectionsSecret, r.Scheme)
+	})
+	if err != nil {
+		log.Error(err, "Failed to ensure secret is present")
+		return ctrl.Result{}, err
+	}
+	log.Info("Ensured secret", "Operation", opResult)
+
 	// Check if the deployment already exists, if not create a new one
 	found := &appsv1.Deployment{}
 	err = r.Get(ctx, types.NamespacedName{Name: connectorirc.Name, Namespace: connectorirc.Namespace}, found)
 	if err != nil && apierrors.IsNotFound(err) {
 		// Define a new deployment
-		dep, err := r.deploymentForConnectorIrc(connectorirc)
+		dep, err := r.deploymentForConnectorIrc(connectorirc, connectionsSecret)
 		if err != nil {
 			log.Error(err, "Failed to define new Deployment resource for ConnectorIrc")
 
@@ -287,7 +322,9 @@ func (r *ConnectorIrcReconciler) doFinalizerOperationsForConnectorIrc(cr *eeveev
 
 // deploymentForConnectorIrc returns a ConnectorIrc Deployment object
 func (r *ConnectorIrcReconciler) deploymentForConnectorIrc(
-	connectorirc *eeveev1alpha1.ConnectorIrc) (*appsv1.Deployment, error) {
+	connectorirc *eeveev1alpha1.ConnectorIrc,
+	configSecret *corev1.Secret,
+) (*appsv1.Deployment, error) {
 
 	replicas := connectorirc.Spec.Size
 
@@ -350,6 +387,14 @@ func (r *ConnectorIrcReconciler) deploymentForConnectorIrc(
 							Type: corev1.SeccompProfileTypeRuntimeDefault,
 						},
 					},
+					Volumes: []corev1.Volume{{
+						Name: "connector-irc-config",
+						VolumeSource: corev1.VolumeSource{
+							Secret: &corev1.SecretVolumeSource{
+								SecretName: configSecret.Name,
+							},
+						},
+					}},
 					Containers: []corev1.Container{{
 						Image:           image,
 						Name:            "connector-irc",
@@ -364,6 +409,14 @@ func (r *ConnectorIrcReconciler) deploymentForConnectorIrc(
 								Drop: []corev1.Capability{
 									"ALL",
 								},
+							},
+						},
+						VolumeMounts: []corev1.VolumeMount{
+							{
+								Name:      "connector-irc-config",
+								MountPath: "/eevee/etc/connections.yaml",
+								SubPath:   "connections.yaml",
+								ReadOnly:  true,
 							},
 						},
 					}},
