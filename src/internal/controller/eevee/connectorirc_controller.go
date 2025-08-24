@@ -181,7 +181,9 @@ func (r *ConnectorIrcReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	// Create a JSON representation of the connections
-	connectionsJson, err := json.Marshal(connectorirc.Spec.Connections)
+	connectionsJson, err := json.Marshal(map[string]interface{}{
+		"connections": connectorirc.Spec.Connections,
+	})
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to marshal connections to JSON: %w", err)
 	}
