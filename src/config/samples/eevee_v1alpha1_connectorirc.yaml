@@ -20,7 +20,7 @@ spec:
   connections:
   - name: wetfish
     irc:
-      host: irc.wetfish.net
+      host: irc.eevee.bot
       port: 6697
       ssl: true
       autoReconnect: true
@@ -33,7 +33,7 @@ spec:
       pingTimeout: 120
 
     ident:
-      nick: eevee-ng
+      nick: eevee
       username: eevee
       gecos: eevee.bot
       version: "0.4.20"
