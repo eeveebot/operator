@@ -212,25 +212,23 @@ func (r *ConnectorIrcReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 
 		// Ensure the secret exists
-		opResult, err := controllerutil.CreateOrUpdate(context.Background(), r.Client, connectionsSecret, func() error {
+		_, err = controllerutil.CreateOrUpdate(context.Background(), r.Client, connectionsSecret, func() error {
 			return controllerutil.SetControllerReference(connectorirc, connectionsSecret, r.Scheme)
 		})
 		if err != nil {
-			log.Error(err, "Failed to ensure secret is present")
+			log.Error(err, "Failed to ensure connection secret is present")
 			return ctrl.Result{}, err
 		}
-		log.Info("Ensured secret", "Operation", opResult)
 	}
 
 	// Ensure the secret exists
-	opResult, err := controllerutil.CreateOrUpdate(context.Background(), r.Client, connectionsSecret, func() error {
+	_, err = controllerutil.CreateOrUpdate(context.Background(), r.Client, connectionsSecret, func() error {
 		return controllerutil.SetControllerReference(connectorirc, connectionsSecret, r.Scheme)
 	})
 	if err != nil {
-		log.Error(err, "Failed to ensure secret is present")
+		log.Error(err, "Failed to ensure connection secret is present")
 		return ctrl.Result{}, err
 	}
-	log.Info("Ensured secret", "Operation", opResult)
 
 	// Check if the deployment already exists, if not create a new one
 	found := &appsv1.Deployment{}
