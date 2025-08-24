@@ -431,7 +431,7 @@ func (r *ConnectorIrcReconciler) deploymentForConnectorIrc(
 						Env: []corev1.EnvVar{
 							{
 								Name:  "IRC_CONNECTIONS_CONFIG_FILE",
-								Value: "/eevee/etc/secrets/connections.yaml",
+								Value: "/eevee/etc/secrets/ircConnections.yaml",
 							},
 						},
 						VolumeMounts: []corev1.VolumeMount{
