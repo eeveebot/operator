@@ -10,7 +10,12 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	reconciler "github.com/operator-framework/helm-operator-plugins"
+
+	loader "helm.sh/helm/v3/pkg/chart/loader"
+
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -178,6 +183,22 @@ func main() {
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
+
+	// Operator's main.go
+	natsChart, err := loader.Load("helm-charts/nats")
+	if err != nil {
+		panic(err)
+	}
+
+	natsHelmReconciler := reconciler.New(
+		reconciler.WithChart(*natsChart),
+		reconciler.WithGroupVersionKind(schema.GroupVersionKind{Group: "eevee.bot", Version: "v1alpha1", Kind: "NatsCluster"}),
+	)
+
+	if err := natsHelmReconciler.SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create reconciler", "reconciler", "NatsCluster")
+		os.Exit(1)
+	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
