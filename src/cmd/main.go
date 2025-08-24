@@ -10,7 +10,7 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
-	reconciler "github.com/operator-framework/helm-operator-plugins"
+	reconciler "github.com/operator-framework/helm-operator-plugins/pkg/reconciler"
 
 	loader "helm.sh/helm/v3/pkg/chart/loader"
 
@@ -190,12 +190,17 @@ func main() {
 		panic(err)
 	}
 
-	natsHelmReconciler := reconciler.New(
+	natsHelmReconciler := &reconciler.Reconciler{}
+
+	if natsHelmReconciler, err = reconciler.New(
 		reconciler.WithChart(*natsChart),
 		reconciler.WithGroupVersionKind(schema.GroupVersionKind{Group: "eevee.bot", Version: "v1alpha1", Kind: "NatsCluster"}),
-	)
+	); err != nil {
+		setupLog.Error(err, "unable to setup reconciler", "reconciler", "NatsCluster")
+		os.Exit(1)
+	}
 
-	if err := natsHelmReconciler.SetupWithManager(mgr); err != nil {
+	if err = natsHelmReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create reconciler", "reconciler", "NatsCluster")
 		os.Exit(1)
 	}
