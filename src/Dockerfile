@@ -29,6 +29,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o op
 FROM gcr.io/distroless/static:nonroot
 WORKDIR /
 COPY --from=builder /workspace/operator .
+COPY --from=builder helm-charts/ ./helm-charts/
 USER 65532:65532
 
 ENTRYPOINT ["/operator"]
