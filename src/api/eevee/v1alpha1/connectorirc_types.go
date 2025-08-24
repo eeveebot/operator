@@ -93,8 +93,8 @@ type ConnectorIrcSpec struct {
 	// Connections defines IRC Connections for the connector
 	Connections []IrcConnectionSpec `json:"ircConnections,omitempty"`
 
-	// ExistingSecret defines an externally provided ircConnections secret
-	ExistingSecret string `json:"existingSecret,omitempty"`
+	// ExistingConnectionSecret defines an externally provided ircConnections secret
+	ExistingConnectionSecret string `json:"existingSecret,omitempty"`
 }
 
 // ConnectorIrcStatus defines the observed state of ConnectorIrc

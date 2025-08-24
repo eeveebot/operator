@@ -44,8 +44,8 @@ spec:
                 description: ContainerImage defines the container image to use
                 type: string
               existingSecret:
-                description: ExistingSecret defines an externally provided ircConnections
-                  secret
+                description: ExistingConnectionSecret defines an externally provided
+                  ircConnections secret
                 type: string
               ircConnections:
                 description: Connections defines IRC Connections for the connector

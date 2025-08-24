@@ -144,10 +144,6 @@ func (r *ConnectorIrcReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			// the Kubernetes API to remove the custom resource.
 			r.doFinalizerOperationsForConnectorIrc(connectorirc)
 
-			// TODO(user): If you add operations to the doFinalizerOperationsForConnectorIrc method
-			// then you need to ensure that all worked fine before deleting and updating the Downgrade status
-			// otherwise, you should requeue here.
-
 			// Re-fetch the connectorirc Custom Resource before updating the status
 			// so that we have the latest state of the resource on the cluster and we will avoid
 			// raising the error "the object has been modified, please apply
@@ -182,12 +178,12 @@ func (r *ConnectorIrcReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	var connectionsSecret *corev1.Secret
-	if connectorirc.Spec.ExistingSecret != "" {
+	if connectorirc.Spec.ExistingConnectionSecret != "" {
 		// Use the existing secret
 		connectionsSecret = &corev1.Secret{}
-		err = r.Get(ctx, types.NamespacedName{Name: connectorirc.Spec.ExistingSecret, Namespace: connectorirc.Namespace}, connectionsSecret)
+		err = r.Get(ctx, types.NamespacedName{Name: connectorirc.Spec.ExistingConnectionSecret, Namespace: connectorirc.Namespace}, connectionsSecret)
 		if err != nil {
-			log.Error(err, "Failed to fetch existing secret", connectorirc.Spec.ExistingSecret)
+			log.Error(err, "Failed to fetch existing secret", connectorirc.Spec.ExistingConnectionSecret)
 			return ctrl.Result{}, err
 		}
 	} else {
@@ -207,7 +203,7 @@ func (r *ConnectorIrcReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		// Create a secret from the connection details
 		connectionsSecret = &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      connectorirc.Name + "-connections-config",
+				Name:      connectorirc.Name + "-connections-secret",
 				Namespace: connectorirc.Namespace,
 			},
 			StringData: map[string]string{
@@ -346,7 +342,7 @@ func (r *ConnectorIrcReconciler) doFinalizerOperationsForConnectorIrc(cr *eeveev
 // deploymentForConnectorIrc returns a ConnectorIrc Deployment object
 func (r *ConnectorIrcReconciler) deploymentForConnectorIrc(
 	connectorirc *eeveev1alpha1.ConnectorIrc,
-	configSecret *corev1.Secret,
+	connectionsSecret *corev1.Secret,
 ) (*appsv1.Deployment, error) {
 
 	replicas := connectorirc.Spec.Size
@@ -411,10 +407,10 @@ func (r *ConnectorIrcReconciler) deploymentForConnectorIrc(
 						},
 					},
 					Volumes: []corev1.Volume{{
-						Name: "connector-irc-config",
+						Name: "connector-irc-connections-secret",
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
-								SecretName: configSecret.Name,
+								SecretName: connectionsSecret.Name,
 							},
 						},
 					}},
@@ -437,14 +433,13 @@ func (r *ConnectorIrcReconciler) deploymentForConnectorIrc(
 						Env: []corev1.EnvVar{
 							{
 								Name:  "IRC_CONNECTIONS_CONFIG_FILE",
-								Value: "/eevee/etc/connections.yaml",
+								Value: "/eevee/etc/secrets/connections.yaml",
 							},
 						},
 						VolumeMounts: []corev1.VolumeMount{
 							{
-								Name:      "connector-irc-config",
-								MountPath: "/eevee/etc/",
-								SubPath:   "connections.yaml",
+								Name:      "connector-irc-connections-secret",
+								MountPath: "/eevee/etc/secrets/",
 								ReadOnly:  true,
 							},
 						},
