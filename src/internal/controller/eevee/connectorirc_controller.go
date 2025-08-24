@@ -180,29 +180,49 @@ func (r *ConnectorIrcReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, nil
 	}
 
-	// Create a JSON representation of the connections
-	connectionsJson, err := json.Marshal(map[string]interface{}{
-		"ircConnections": connectorirc.Spec.Connections,
-	})
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to marshal connections to JSON: %w", err)
-	}
+	var connectionsSecret *corev1.Secret
+	if connectorirc.Spec.ExistingSecret != "" {
+		// Use the existing secret
+		connectionsSecret = &corev1.Secret{}
+		err = r.Get(ctx, types.NamespacedName{Name: connectorirc.Spec.ExistingSecret, Namespace: connectorirc.Namespace}, connectionsSecret)
+		if err != nil {
+			log.Error(err, "Failed to fetch existing secret", connectorirc.Spec.ExistingSecret)
+			return ctrl.Result{}, err
+		}
+	} else {
+		// Create a JSON representation of the connections
+		connectionsJson, err := json.Marshal(map[string]interface{}{
+			"ircConnections": connectorirc.Spec.Connections,
+		})
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to marshal connections to JSON: %w", err)
+		}
 
-	// Convert JSON to YAML
-	connectionsYaml, err := yaml.JSONToYAML(connectionsJson)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to convert connections JSON to YAML: %w", err)
-	}
+		// Convert JSON to YAML
+		connectionsYaml, err := yaml.JSONToYAML(connectionsJson)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to convert connections JSON to YAML: %w", err)
+		}
+		// Create a secret from the connection details
+		connectionsSecret = &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      connectorirc.Name + "-connections-config",
+				Namespace: connectorirc.Namespace,
+			},
+			StringData: map[string]string{
+				"ircConnections.yaml": string(connectionsYaml),
+			},
+		}
 
-	// Create a secret from the connection details
-	connectionsSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      connectorirc.Name + "-connections-config",
-			Namespace: connectorirc.Namespace,
-		},
-		StringData: map[string]string{
-			"ircConnections.yaml": string(connectionsYaml),
-		},
+		// Ensure the secret exists
+		opResult, err := controllerutil.CreateOrUpdate(context.Background(), r.Client, connectionsSecret, func() error {
+			return controllerutil.SetControllerReference(connectorirc, connectionsSecret, r.Scheme)
+		})
+		if err != nil {
+			log.Error(err, "Failed to ensure secret is present")
+			return ctrl.Result{}, err
+		}
+		log.Info("Ensured secret", "Operation", opResult)
 	}
 
 	// Ensure the secret exists
@@ -411,6 +431,12 @@ func (r *ConnectorIrcReconciler) deploymentForConnectorIrc(
 								Drop: []corev1.Capability{
 									"ALL",
 								},
+							},
+						},
+						Env: []corev1.EnvVar{
+							{
+								Name:  "IRC_CONNECTIONS_CONFIG_FILE",
+								Value: "/eevee/etc/connections.yaml",
 							},
 						},
 						VolumeMounts: []corev1.VolumeMount{

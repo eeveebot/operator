@@ -33,6 +33,7 @@ type IdentSpec struct {
 	Username string `json:"username,omitempty"`
 	Gecos    string `json:"gecos,omitempty"`
 	Version  string `json:"version,omitempty"`
+	QuitMsg  string `json:"quitMsg,omitempty"`
 }
 
 // PostConnectSpec defines the post-connect actions
@@ -96,6 +97,9 @@ type ConnectorIrcSpec struct {
 
 	// Connections defines IRC Connections for the connector
 	Connections []IrcConnectionSpec `json:"ircConnections,omitempty"`
+
+	// ExistingSecret defines an externally provided ircConnections secret
+	ExistingSecret string `json:"existingSecret,omitempty"`
 }
 
 // ConnectorIrcStatus defines the observed state of ConnectorIrc

@@ -20,8 +20,8 @@ spec:
   ircConnections:
   - name: eeveebot
     irc:
-      host: irc.eevee.bot
-      port: 6697
+      host: localhost
+      port: 6667
       ssl: true
       autoReconnect: true
       autoReconnectWait: 5000
@@ -37,6 +37,7 @@ spec:
       username: eevee
       gecos: eevee.bot
       version: "0.4.20"
+      quitMsg: "eevee 0.4.20"
 
     postConnect:
       join:

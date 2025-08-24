@@ -43,6 +43,118 @@ spec:
                 default: ghcr.io/eeveebot/connector-irc:latest
                 description: ContainerImage defines the container image to use
                 type: string
+              existingSecret:
+                description: ExistingSecret defines an externally provided ircConnections
+                  secret
+                type: string
+              ircConnections:
+                description: Connections defines IRC Connections for the connector
+                items:
+                  description: IrcConnectionSpec defines the configuration for a single
+                    IRC connection
+                  properties:
+                    ident:
+                      description: IdentSpec defines the IRC ident configuration
+                      properties:
+                        gecos:
+                          type: string
+                        nick:
+                          type: string
+                        quitMsg:
+                          type: string
+                        username:
+                          type: string
+                        version:
+                          type: string
+                      type: object
+                    irc:
+                      description: IRCServerConnectionSpec defines the detailed IRC
+                        Connection configuration
+                      properties:
+                        autoReconnect:
+                          type: boolean
+                        autoReconnectMaxRetries:
+                          type: integer
+                        autoReconnectWait:
+                          type: integer
+                        autoRejoin:
+                          type: boolean
+                        autoRejoinMaxRetries:
+                          type: integer
+                        autoRejoinWait:
+                          type: integer
+                        host:
+                          type: string
+                        pingInterval:
+                          type: integer
+                        pingTimeout:
+                          type: integer
+                        port:
+                          type: integer
+                        ssl:
+                          type: boolean
+                      type: object
+                    name:
+                      type: string
+                    postConnect:
+                      description: PostConnectSpec defines the post-connect actions
+                      properties:
+                        join:
+                          items:
+                            description: JoinSpec defines the join actions
+                            properties:
+                              channels:
+                                items:
+                                  description: ChannelSpec defines the channels to
+                                    join
+                                  properties:
+                                    channel:
+                                      type: string
+                                    key:
+                                      type: string
+                                  type: object
+                                type: array
+                              sequence:
+                                type: integer
+                            type: object
+                          type: array
+                        message:
+                          items:
+                            description: MessageSpec defines the message actions
+                            properties:
+                              msg:
+                                type: string
+                              sequence:
+                                type: integer
+                              target:
+                                type: string
+                            type: object
+                          type: array
+                        mode:
+                          items:
+                            description: ModeSpec defines the mode actions
+                            properties:
+                              mode:
+                                type: string
+                              sequence:
+                                type: integer
+                              target:
+                                type: string
+                            type: object
+                          type: array
+                        raw:
+                          items:
+                            description: RawSpec defines the raw actions
+                            properties:
+                              raw:
+                                type: string
+                              sequence:
+                                type: integer
+                            type: object
+                          type: array
+                      type: object
+                  type: object
+                type: array
               pullPolicy:
                 default: Always
                 description: PullPolicy defines the imagepullpolicy to use
