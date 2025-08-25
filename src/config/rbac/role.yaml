@@ -4,16 +4,6 @@ kind: ClusterRole
 metadata:
   name: eevee-operator-role
 rules:
-- resources:
-  - secrets
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
 - apiGroups:
   - apps
   resources:
