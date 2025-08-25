@@ -165,10 +165,35 @@ docker-buildx: ## Build and push docker image for the operator for cross-platfor
 	- $(CONTAINER_TOOL) buildx rm eevee-builder
 	rm Dockerfile.cross
 
-.PHONY: build-installer
-build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
+.PHONY: build-consolidated
+build-consolidated: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
 	cd config/operator
-	$(KUSTOMIZE) build config/default > ../dist/install.yaml
+	$(KUSTOMIZE) build config/default > ../dist/bundle.yaml
+
+.PHONY: build-operator
+build-operator: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
+	cd config/operator
+	$(KUSTOMIZE) build config/operator > ../dist/operator.yaml
+
+.PHONY: build-crds
+build-crds: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
+	cd config/operator
+	$(KUSTOMIZE) build config/crd > ../dist/crds.yaml
+
+.PHONY: build-rbac
+build-rbac: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
+	cd config/operator
+	$(KUSTOMIZE) build config/rbac > ../dist/rbac.yaml
+
+.PHONY: build-servicemonitors
+build-servicemonitors: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
+	cd config/operator
+	$(KUSTOMIZE) build config/prometheus > ../dist/servicemonitors.yaml
+
+.PHONY: build-samples
+build-samples: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
+	cd config/operator
+	$(KUSTOMIZE) build config/samples > ../dist/cr-samples.yaml
 
 ##@ Deployment
 

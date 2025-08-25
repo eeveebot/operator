@@ -1,0 +1,137 @@
+apiVersion: eevee.bot/v1alpha1
+kind: ConnectorIrc
+metadata:
+  name: connector-irc
+  namespace: my-eevee-bot
+spec:
+  containerImage: ghcr.io/eeveebot/connector-irc:latest
+  ircConnections:
+  - ident:
+      gecos: eevee.bot
+      nick: eevee
+      quitMsg: eevee 0.4.20
+      username: eevee
+      version: 0.4.20
+    irc:
+      autoReconnect: true
+      autoReconnectMaxRetries: 10
+      autoReconnectWait: 5000
+      autoRejoin: true
+      autoRejoinMaxRetries: 5
+      autoRejoinWait: 5000
+      host: localhost
+      pingInterval: 30
+      pingTimeout: 120
+      port: 6667
+      ssl: true
+    name: localhost
+    postConnect:
+      join:
+      - channel: '#eevee'
+        key: ""
+        sequence: 1
+  pullPolicy: Always
+  size: 1
+---
+apiVersion: eevee.bot/v1alpha1
+kind: NatsCluster
+metadata:
+  name: nats-cluster
+  namespace: my-eevee-bot
+spec:
+  config:
+    cluster:
+      enabled: true
+      port: 6222
+      replicas: 3
+    gateway:
+      enabled: false
+    jetstream:
+      enabled: true
+      fileStore:
+        dir: /data
+        enabled: true
+        pvc:
+          enabled: true
+          size: 10Gi
+          storageClassName: mystorageclass
+      memoryStore:
+        enabled: false
+    leafnodes:
+      enabled: false
+    merge:
+      authorization:
+        token: << $TOKEN >>
+    monitor:
+      enabled: true
+      port: 8222
+    mqtt:
+      enabled: false
+    nats:
+      port: 4222
+    patch: []
+    profiling:
+      enabled: false
+      port: 65432
+    resolver:
+      enabled: false
+    websocket:
+      enabled: false
+  container:
+    env:
+      GOMEMLIMIT: 3.5GiB
+      TOKEN:
+        valueFrom:
+          secretKeyRef:
+            key: token
+            name: nats-auth
+    merge:
+      resources:
+        limits:
+          cpu: "2"
+          memory: 4Gi
+        requests:
+          cpu: "2"
+          memory: 4Gi
+  namespaceOverride: my-eevee-bot
+  natsBox:
+    enabled: false
+  podDisruptionBudget:
+    enabled: true
+  promExporter:
+    enabled: true
+    podMonitor:
+      enabled: true
+  reloader:
+    enabled: true
+  service:
+    enabled: true
+    ports:
+      cluster:
+        enabled: true
+      gateway:
+        enabled: true
+      leafnodes:
+        enabled: true
+      monitor:
+        enabled: true
+      mqtt:
+        enabled: true
+      nats:
+        enabled: true
+      profiling:
+        enabled: true
+      websocket:
+        enabled: true
+  serviceAccount:
+    enabled: true
+---
+apiVersion: eevee.bot/v1alpha1
+kind: Toolbox
+metadata:
+  name: toolbox
+  namespace: my-eevee-bot
+spec:
+  containerImage: ghcr.io/eeveebot/toolbox:latest
+  pullPolicy: Always
+  size: 1
