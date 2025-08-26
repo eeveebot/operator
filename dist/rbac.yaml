@@ -121,6 +121,32 @@ rules:
 - apiGroups:
   - eevee.bot
   resources:
+  - natsclusters
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - eevee.bot
+  resources:
+  - natsclusters/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - eevee.bot
+  resources:
+  - natsclusters/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - eevee.bot
+  resources:
   - toolboxes
   verbs:
   - create
