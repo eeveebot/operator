@@ -15,6 +15,19 @@ plugins:
       options:
         image: ghcr.io/eeveebot/toolbox:latest
       version: v1alpha1
+    - domain: bot
+      group: eevee
+      kind: ConnectorIrc
+      options:
+        image: ghcr.io/eeveebot/connector-irc:latest
+      version: v1alpha1
+  helm.sdk.operatorframework.io/v1:
+    resources:
+    - domain: bot
+      group: eevee
+      kind: NatsCluster
+      options: {}
+      version: v1alpha1
   manifests.sdk.operatorframework.io/v2: {}
   scorecard.sdk.operatorframework.io/v2: {}
 projectName: eevee
@@ -27,7 +40,16 @@ resources:
   domain: bot
   group: eevee
   kind: Toolbox
-  path: github.com/eeveebot/operator/api/v1alpha1
+  path: github.com/eeveebot/operator/src/api/eevee/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: bot
+  group: eevee
+  kind: ConnectorIrc
+  path: github.com/eeveebot/operator/src/api/eevee/v1alpha1
   version: v1alpha1
 - api:
     crdVersion: v1

@@ -5,7 +5,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/name: eevee-operator
     control-plane: eevee
-  name: system
+  name: eevee-system
 ---
 apiVersion: v1
 kind: Service
@@ -33,7 +33,7 @@ metadata:
     app.kubernetes.io/name: eevee-operator
     control-plane: eevee
   name: eevee-operator
-  namespace: system
+  namespace: eevee-system
 spec:
   replicas: 1
   selector:

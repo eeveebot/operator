@@ -15,6 +15,16 @@ spec:
       kind: Toolbox
       name: toolboxes.eevee.bot
       version: v1alpha1
+    - description: ConnectorIrc is the Schema for the connectorircs API
+      displayName: ConnectorIrc
+      kind: ConnectorIrc
+      name: connectorircs.eevee.bot
+      version: v1alpha1
+    - description: NatsCluster is the Schema for the natsclusters API
+      displayName: NatsCluster
+      kind: NatsCluster
+      name: natsclusters.eevee.bot
+      version: v1alpha1
   description: eevee.bot
   displayName: eevee
   icon:

@@ -165,6 +165,9 @@ docker-buildx: ## Build and push docker image for the operator for cross-platfor
 	- $(CONTAINER_TOOL) buildx rm eevee-builder
 	rm Dockerfile.cross
 
+.PHONY: build-all
+build-all: manifests generate kustomize build-consolidated build-operator build-crds build-rbac build-servicemonitors build-samples
+
 .PHONY: build-consolidated
 build-consolidated: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
 	cd config/operator
@@ -182,6 +185,7 @@ build-crds: manifests generate kustomize ## Generate a consolidated YAML with CR
 
 .PHONY: build-rbac
 build-rbac: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
+	$(CONTROLLER_GEN) rbac:roleName=eevee-operator-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 	cd config/operator
 	$(KUSTOMIZE) build config/rbac > ../dist/rbac.yaml
 

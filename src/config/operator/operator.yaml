@@ -5,13 +5,13 @@ metadata:
     control-plane: eevee
     app.kubernetes.io/name: eevee-operator
     app.kubernetes.io/managed-by: kustomize
-  name: system
+  name: eevee-system
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: eevee-operator
-  namespace: system
+  namespace: eevee-system
   labels:
     control-plane: eevee
     app.kubernetes.io/name: eevee-operator
