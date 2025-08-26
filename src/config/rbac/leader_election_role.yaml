@@ -6,6 +6,7 @@ metadata:
     app.kubernetes.io/name: eevee
     app.kubernetes.io/managed-by: kustomize
   name: eevee-operator-leader-election-role
+  namespace: eevee-system
 rules:
 - apiGroups:
   - ""

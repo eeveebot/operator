@@ -5,6 +5,7 @@ metadata:
     app.kubernetes.io/name: eevee
     app.kubernetes.io/managed-by: kustomize
   name: eevee-operator-leader-election-rolebinding
+  namespace: eevee-system
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role

@@ -14,6 +14,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/name: eevee
   name: eevee-operator-leader-election-role
+  namespace: eevee-system
 rules:
 - apiGroups:
   - ""
@@ -151,6 +152,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/name: eevee
   name: eevee-operator-leader-election-rolebinding
+  namespace: eevee-system
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
