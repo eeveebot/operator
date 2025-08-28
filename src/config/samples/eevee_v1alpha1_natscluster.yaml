@@ -10,9 +10,6 @@ spec:
   namespaceOverride: my-eevee-bot
   container:
     env:
-      # Different from k8s units, suffix must be B, KiB, MiB, GiB, or TiB
-      # Should be ~80% of memory limit
-      GOMEMLIMIT: 3.5GiB
       TOKEN:
         valueFrom:
           secretKeyRef:
@@ -30,20 +27,11 @@ spec:
     cluster:
       enabled: true
       port: 6222
-      # must be 2 or higher when jetstream is enabled
-      replicas: 3
+      replicas: 1
 
     jetstream:
-      enabled: true
-      fileStore:
-        enabled: true
-        dir: /data
-        pvc:
-          enabled: true
-          size: 10Gi
-          storageClassName: mystorageclass
-      memoryStore:
-        enabled: false
+      enabled: false
+
     nats:
       port: 4222
 

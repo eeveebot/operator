@@ -43,20 +43,11 @@ spec:
     cluster:
       enabled: true
       port: 6222
-      replicas: 3
+      replicas: 1
     gateway:
       enabled: false
     jetstream:
-      enabled: true
-      fileStore:
-        dir: /data
-        enabled: true
-        pvc:
-          enabled: true
-          size: 10Gi
-          storageClassName: mystorageclass
-      memoryStore:
-        enabled: false
+      enabled: false
     leafnodes:
       enabled: false
     merge:
@@ -79,7 +70,6 @@ spec:
       enabled: false
   container:
     env:
-      GOMEMLIMIT: 3.5GiB
       TOKEN:
         valueFrom:
           secretKeyRef:
