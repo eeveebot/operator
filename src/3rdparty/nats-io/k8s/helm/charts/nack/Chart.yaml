@@ -1,0 +1,14 @@
+apiVersion: v2
+name: nack
+version: 0.29.2
+appVersion: 0.19.1
+description: A Helm chart for NACK - NAts Controller for Kubernetes
+keywords:
+- nats
+- jetstream
+- cncf
+maintainers:
+- email: info@nats.io
+  name: The NATS Authors
+  url: https://github.com/nats-io
+icon: https://nats.io/img/nats-icon-color.png
