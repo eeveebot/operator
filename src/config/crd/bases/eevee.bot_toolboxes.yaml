@@ -43,6 +43,15 @@ spec:
                 default: ghcr.io/eeveebot/toolbox:latest
                 description: ContainerImage defines the container image to use
                 type: string
+              metrics:
+                default: false
+                description: Metrics defines to enable metrics or not
+                type: boolean
+              natsAuthSecret:
+                default: nats-auth
+                description: NatsAuthSecretName defines the secret with NATS auth
+                  parameters
+                type: string
               pullPolicy:
                 default: Always
                 description: PullPolicy defines the imagepullpolicy to use

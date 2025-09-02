@@ -22,6 +22,14 @@ type ToolboxSpec struct {
 	// PullPolicy defines the imagepullpolicy to use
 	// +kubebuilder:default=Always
 	PullPolicy string `json:"pullPolicy,omitempty"`
+
+	// NatsAuthSecretName defines the secret with NATS auth parameters
+	// +kubebuilder:default=nats-auth
+	NatsAuthSecret string `json:"natsAuthSecret,omitempty"`
+
+	// Metrics defines to enable metrics or not
+	// +kubebuilder:default=false
+	Metrics bool `json:"metrics,omitempty"`
 }
 
 // ToolboxStatus defines the observed state of Toolbox

@@ -95,6 +95,14 @@ type ConnectorIrcSpec struct {
 
 	// ExistingConnectionSecret defines an externally provided ircConnections secret
 	ExistingConnectionSecret string `json:"existingSecret,omitempty"`
+
+	// NatsAuthSecretName defines the secret with NATS auth parameters
+	// +kubebuilder:default=nats-auth
+	NatsAuthSecret string `json:"natsAuthSecret,omitempty"`
+
+	// Metrics defines to enable metrics or not
+	// +kubebuilder:default=false
+	Metrics bool `json:"metrics,omitempty"`
 }
 
 // ConnectorIrcStatus defines the observed state of ConnectorIrc

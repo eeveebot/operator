@@ -149,6 +149,15 @@ spec:
                       type: object
                   type: object
                 type: array
+              metrics:
+                default: false
+                description: Metrics defines to enable metrics or not
+                type: boolean
+              natsAuthSecret:
+                default: nats-auth
+                description: NatsAuthSecretName defines the secret with NATS auth
+                  parameters
+                type: string
               pullPolicy:
                 default: Always
                 description: PullPolicy defines the imagepullpolicy to use

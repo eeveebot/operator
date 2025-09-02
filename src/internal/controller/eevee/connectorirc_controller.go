@@ -433,6 +433,17 @@ func (r *ConnectorIrcReconciler) deploymentForConnectorIrc(
 								Name:  "IRC_CONNECTIONS_CONFIG_FILE",
 								Value: "/eevee/etc/secrets/ircConnections.yaml",
 							},
+							{
+								Name: "NATS_TOKEN",
+								ValueFrom: &corev1.EnvVarSource{
+									SecretKeyRef: &corev1.SecretKeySelector{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: connectorirc.Spec.NatsAuthSecret,
+										},
+										Key: "token",
+									},
+								},
+							},
 						},
 						VolumeMounts: []corev1.VolumeMount{
 							{
