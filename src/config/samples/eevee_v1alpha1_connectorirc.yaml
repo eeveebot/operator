@@ -16,6 +16,10 @@ spec:
   # Defaults to IfNotPresent
   pullPolicy: Always
 
+  # Namespace NATS lives in
+  # Defaults to ConnectorIrc namespace if empty string
+  natsNamespace: my-eevee-bot
+
   # Setup IRC Connections
   ircConnections:
   - name: localhost

@@ -157,6 +157,11 @@ spec:
                 description: NatsAuthSecretName defines the secret with NATS auth
                   parameters
                 type: string
+              natsNamespace:
+                default: ""
+                description: NatsNamespace defines the namespace the NATS service
+                  is in, defaults to the bot namespace
+                type: string
               pullPolicy:
                 default: Always
                 description: PullPolicy defines the imagepullpolicy to use
@@ -347,6 +352,11 @@ spec:
                 default: nats-auth
                 description: NatsAuthSecretName defines the secret with NATS auth
                   parameters
+                type: string
+              natsNamespace:
+                default: ""
+                description: NatsNamespace defines the namespace the NATS service
+                  is in, defaults to the bot namespace
                 type: string
               pullPolicy:
                 default: Always

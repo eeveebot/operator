@@ -297,6 +297,11 @@ func (r *ToolboxReconciler) deploymentForToolbox(
 		pullPolicy = corev1.PullAlways
 	}
 
+	natsNamespace := toolbox.Spec.NatsNamespace
+	if natsNamespace == "" {
+		natsNamespace = toolbox.Namespace
+	}
+
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      toolbox.Name,
@@ -368,6 +373,10 @@ func (r *ToolboxReconciler) deploymentForToolbox(
 										Key: "token",
 									},
 								},
+							},
+							{
+								Name:  "NATS_HOST",
+								Value: "nats." + natsNamespace + ".svc.cluster.local",
 							},
 						},
 					}},

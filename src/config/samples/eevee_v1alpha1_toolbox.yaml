@@ -14,3 +14,7 @@ spec:
   # Override pull policy
   # Defaults to IfNotPresent
   pullPolicy: Always
+
+  # Namespace NATS lives in
+  # Defaults to Toolbox namespace if empty string
+  natsNamespace: my-eevee-bot

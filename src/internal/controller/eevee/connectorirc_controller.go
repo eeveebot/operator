@@ -361,6 +361,11 @@ func (r *ConnectorIrcReconciler) deploymentForConnectorIrc(
 		pullPolicy = corev1.PullAlways
 	}
 
+	natsNamespace := connectorirc.Spec.NatsNamespace
+	if natsNamespace == "" {
+		natsNamespace = connectorirc.Namespace
+	}
+
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      connectorirc.Name,
@@ -432,6 +437,10 @@ func (r *ConnectorIrcReconciler) deploymentForConnectorIrc(
 							{
 								Name:  "IRC_CONNECTIONS_CONFIG_FILE",
 								Value: "/eevee/etc/secrets/ircConnections.yaml",
+							},
+							{
+								Name:  "NATS_HOST",
+								Value: "nats." + natsNamespace + ".svc.cluster.local",
 							},
 							{
 								Name: "NATS_TOKEN",

@@ -73,6 +73,7 @@ spec:
 
   service:
     enabled: true
+    name: nats
     ports:
       nats:
         enabled: true

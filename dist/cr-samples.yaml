@@ -30,6 +30,7 @@ spec:
       - channel: '#eevee'
         key: ""
         sequence: 1
+  natsNamespace: my-eevee-bot
   pullPolicy: Always
   size: 1
 ---
@@ -96,6 +97,7 @@ spec:
     enabled: true
   service:
     enabled: true
+    name: nats
     ports:
       cluster:
         enabled: true
@@ -123,5 +125,6 @@ metadata:
   namespace: my-eevee-bot
 spec:
   containerImage: ghcr.io/eeveebot/toolbox:latest
+  natsNamespace: my-eevee-bot
   pullPolicy: Always
   size: 1

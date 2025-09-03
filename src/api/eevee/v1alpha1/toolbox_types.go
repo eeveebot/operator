@@ -27,6 +27,10 @@ type ToolboxSpec struct {
 	// +kubebuilder:default=nats-auth
 	NatsAuthSecret string `json:"natsAuthSecret,omitempty"`
 
+	// NatsNamespace defines the namespace the NATS service is in, defaults to the bot namespace
+	// +kubebuilder:default=""
+	NatsNamespace string `json:"natsNamespace,omitempty"`
+
 	// Metrics defines to enable metrics or not
 	// +kubebuilder:default=false
 	Metrics bool `json:"metrics,omitempty"`
