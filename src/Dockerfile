@@ -15,7 +15,7 @@ RUN go mod download
 COPY cmd/main.go cmd/main.go
 COPY api/ api/
 COPY internal/controller/ internal/controller/
-COPY 3rdparty/nats-io/k8s/helm/charts/nats helm-charts/
+COPY helm-charts/ helm-charts/
 
 # Build
 # the GOARCH has not a default value to allow the binary be built according to the host where the command
