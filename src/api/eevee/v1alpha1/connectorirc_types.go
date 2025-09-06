@@ -71,8 +71,28 @@ type PostConnectRawSpec struct {
 	Raw      string `json:"raw,omitempty"`
 }
 
-// ConnectorIrcSpec defines the desired state of ConnectorIrc
-type ConnectorIrcSpec struct {
+// ConnectorIrcStatus defines the observed state of ConnectorIrc
+type ConnectorIrcStatus struct {
+	// Represents the observations of a ConnectorIrc's current state.
+	// ConnectorIrc.status.conditions.type are: "Available", "Progressing", and "Degraded"
+	// ConnectorIrc.status.conditions.status are one of True, False, Unknown.
+	// ConnectorIrc.status.conditions.reason the value should be a CamelCase string and producers of specific
+	// condition types may define expected values and meanings for this field, and whether the values
+	// are considered a guaranteed API.
+	// ConnectorIrc.status.conditions.Message is a human readable message indicating details about the transition.
+	// For further information see: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
+
+	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
+}
+
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+
+// ConnectorIrc is the Schema for the connectorircs API
+type ConnectorIrc struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
 	// Size defines the number of ConnectorIrc instances
 	// The following markers will use OpenAPI v3 schema to validate the value
 	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
@@ -107,31 +127,7 @@ type ConnectorIrcSpec struct {
 	// Metrics defines to enable metrics or not
 	// +kubebuilder:default=false
 	Metrics bool `json:"metrics,omitempty"`
-}
 
-// ConnectorIrcStatus defines the observed state of ConnectorIrc
-type ConnectorIrcStatus struct {
-	// Represents the observations of a ConnectorIrc's current state.
-	// ConnectorIrc.status.conditions.type are: "Available", "Progressing", and "Degraded"
-	// ConnectorIrc.status.conditions.status are one of True, False, Unknown.
-	// ConnectorIrc.status.conditions.reason the value should be a CamelCase string and producers of specific
-	// condition types may define expected values and meanings for this field, and whether the values
-	// are considered a guaranteed API.
-	// ConnectorIrc.status.conditions.Message is a human readable message indicating details about the transition.
-	// For further information see: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
-}
-
-// +kubebuilder:object:root=true
-// +kubebuilder:subresource:status
-
-// ConnectorIrc is the Schema for the connectorircs API
-type ConnectorIrc struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
-
-	Spec   ConnectorIrcSpec   `json:"spec,omitempty"`
 	Status ConnectorIrcStatus `json:"status,omitempty"`
 }
 

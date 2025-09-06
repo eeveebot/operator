@@ -178,18 +178,18 @@ func (r *ConnectorIrcReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	var connectionsSecret *corev1.Secret
-	if connectorirc.Spec.ExistingConnectionSecret != "" {
+	if connectorirc.ExistingConnectionSecret != "" {
 		// Use the existing secret
 		connectionsSecret = &corev1.Secret{}
-		err = r.Get(ctx, types.NamespacedName{Name: connectorirc.Spec.ExistingConnectionSecret, Namespace: connectorirc.Namespace}, connectionsSecret)
+		err = r.Get(ctx, types.NamespacedName{Name: connectorirc.ExistingConnectionSecret, Namespace: connectorirc.Namespace}, connectionsSecret)
 		if err != nil {
-			log.Error(err, "Failed to fetch existing secret", connectorirc.Spec.ExistingConnectionSecret)
+			log.Error(err, "Failed to fetch existing secret", connectorirc.ExistingConnectionSecret)
 			return ctrl.Result{}, err
 		}
 	} else {
 		// Create a JSON representation of the connections
 		connectionsJson, err := json.Marshal(map[string]interface{}{
-			"ircConnections": connectorirc.Spec.Connections,
+			"ircConnections": connectorirc.Connections,
 		})
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to marshal connections to JSON: %w", err)
@@ -274,7 +274,7 @@ func (r *ConnectorIrcReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	// to set the quantity of Deployment instances to the desired state on the cluster.
 	// Therefore, the following code will ensure the Deployment size is the same as defined
 	// via the Size spec of the Custom Resource which we are reconciling.
-	size := connectorirc.Spec.Size
+	size := connectorirc.Size
 	if *found.Spec.Replicas != size {
 		found.Spec.Replicas = &size
 		if err = r.Update(ctx, found); err != nil {
@@ -343,12 +343,12 @@ func (r *ConnectorIrcReconciler) deploymentForConnectorIrc(
 	connectionsSecret *corev1.Secret,
 ) (*appsv1.Deployment, error) {
 
-	replicas := connectorirc.Spec.Size
+	replicas := connectorirc.Size
 
 	// Get the Operand image
 	image := defaultImageForConnectorIrc
-	if len(connectorirc.Spec.ContainerImage) != 0 {
-		image = connectorirc.Spec.ContainerImage
+	if len(connectorirc.ContainerImage) != 0 {
+		image = connectorirc.ContainerImage
 	}
 
 	// Get common labels for the deployment
@@ -356,12 +356,12 @@ func (r *ConnectorIrcReconciler) deploymentForConnectorIrc(
 
 	// Get the pull policy
 	pullPolicy := corev1.PullIfNotPresent
-	pullPolicyString := connectorirc.Spec.PullPolicy
+	pullPolicyString := connectorirc.PullPolicy
 	if pullPolicyString == "Always" {
 		pullPolicy = corev1.PullAlways
 	}
 
-	natsNamespace := connectorirc.Spec.NatsNamespace
+	natsNamespace := connectorirc.NatsNamespace
 	if natsNamespace == "" {
 		natsNamespace = connectorirc.Namespace
 	}
@@ -447,7 +447,7 @@ func (r *ConnectorIrcReconciler) deploymentForConnectorIrc(
 								ValueFrom: &corev1.EnvVarSource{
 									SecretKeyRef: &corev1.SecretKeySelector{
 										LocalObjectReference: corev1.LocalObjectReference{
-											Name: connectorirc.Spec.NatsAuthSecret,
+											Name: connectorirc.NatsAuthSecret,
 										},
 										Key: "token",
 									},
