@@ -135,8 +135,8 @@ type ConnectorIrc struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   ConnectorIrcSpec   `json:"spec"`
-	Status ConnectorIrcStatus `json:"status"`
+	Spec   ConnectorIrcSpec   `json:"spec,omitempty"`
+	Status ConnectorIrcStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
