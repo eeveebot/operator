@@ -153,6 +153,10 @@ spec:
                 default: false
                 description: Metrics defines to enable metrics or not
                 type: boolean
+              name:
+                default: eevee-connector-irc
+                description: Name defines the name of this ConnectorIRC
+                type: string
               natsAuthSecret:
                 default: nats-auth
                 description: NatsAuthSecretName defines the secret with NATS auth
@@ -251,6 +255,9 @@ spec:
                   type: object
                 type: array
             type: object
+        required:
+        - spec
+        - status
         type: object
     served: true
     storage: true
