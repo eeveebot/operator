@@ -390,7 +390,7 @@ func (r *ConnectorIrcReconciler) deploymentForConnectorIrc(
 											{
 												Key:      "kubernetes.io/arch",
 												Operator: "In",
-												Values:   []string{"amd64", "arm64", "ppc64le", "s390x"},
+												Values:   []string{"amd64", "arm64"},
 											},
 											{
 												Key:      "kubernetes.io/os",
