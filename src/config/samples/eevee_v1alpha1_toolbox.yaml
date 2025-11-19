@@ -9,7 +9,7 @@ spec:
   size: 1
 
   # Override container image
-  containerImage: ghcr.io/eeveebot/toolbox:latest
+  containerImage: ghcr.io/eeveebot/cli:latest
 
   # Override pull policy
   # Defaults to IfNotPresent

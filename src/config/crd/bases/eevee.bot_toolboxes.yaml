@@ -40,7 +40,7 @@ spec:
             description: ToolboxSpec defines the desired state of Toolbox
             properties:
               containerImage:
-                default: ghcr.io/eeveebot/toolbox:latest
+                default: ghcr.io/eeveebot/cli:latest
                 description: ContainerImage defines the container image to use
                 type: string
               metrics:

@@ -24,7 +24,7 @@ import (
 
 const toolboxFinalizer = "eevee.bot/finalizer"
 
-const defaultImageForToolbox = "ghcr.io/eeveebot/toolbox:latest"
+const defaultImageForToolbox = "ghcr.io/eeveebot/cli:latest"
 
 // Definitions to manage status conditions
 const (

@@ -16,7 +16,7 @@ type ToolboxSpec struct {
 	Size int32 `json:"size,omitempty"`
 
 	// ContainerImage defines the container image to use
-	// +kubebuilder:default="ghcr.io/eeveebot/toolbox:latest"
+	// +kubebuilder:default="ghcr.io/eeveebot/cli:latest"
 	ContainerImage string `json:"containerImage,omitempty"`
 
 	// PullPolicy defines the imagepullpolicy to use

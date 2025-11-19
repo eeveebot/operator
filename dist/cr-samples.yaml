@@ -124,7 +124,7 @@ metadata:
   name: toolbox
   namespace: my-eevee-bot
 spec:
-  containerImage: ghcr.io/eeveebot/toolbox:latest
+  containerImage: ghcr.io/eeveebot/cli:latest
   natsNamespace: my-eevee-bot
   pullPolicy: Always
   size: 1
