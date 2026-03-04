@@ -1,6 +1,6 @@
 {
   "name": "@eeveebot/operator",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "the eevee operator",
   "keywords": [],
   "main": "dist/main.mjs",
