@@ -1,6 +1,0 @@
-# Adds namespace to all resources.
-namespace: eevee-system
-resources:
-- ../crd
-- ../rbac
-- ../operator

@@ -1,0 +1,28 @@
+{
+  "name": "@eeveebot/operator",
+  "version": "0.0.1",
+  "description": "the eevee operator",
+  "keywords": [],
+  "main": "dist/main.mjs",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "test": "npx eslint src/"
+  },
+  "type": "module",
+  "devDependencies": {
+    "@types/node": "^18",
+    "@types/ws": "^8.18.1",
+    "@typescript-eslint/eslint-plugin": "^8.52.0",
+    "@typescript-eslint/parser": "^8.50.1",
+    "eslint": "^9.39.2",
+    "prettier": "^3.7.4",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@eeveebot/crds": "^0.4.70",
+    "@thehonker/k8s-operator": "^3.1.1-alpha.9",
+    "winston": "^3.19.0"
+  }
+}

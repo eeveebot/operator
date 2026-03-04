@@ -1,0 +1,6 @@
+'use strict';
+
+export const eevee_logo: string = `
+
+
+`;
