@@ -10,9 +10,21 @@ import { eevee_logo } from './lib/logo.mjs';
 // Logging
 import { log, opLogger } from './lib/logging.mjs';
 
+// Import managedCrd objects
+import { managedCrd } from './lib/managers/types.mjs';
+
+import { managedCrds as ChatConnectionIrc } from './lib/managers/eevee.bot.v1.ChatConnectionIrc.mjs';
+import { managedCrds as IpcConfig } from './lib/managers/eevee.bot.v1.IpcConfig.mjs';
+import { managedCrds as Toolbox } from './lib/managers/eevee.bot.v1.Toolbox.mjs';
+
+const managedCrds: managedCrd[] = [];
+managedCrds.push(...ChatConnectionIrc);
+managedCrds.push(...IpcConfig);
+managedCrds.push(...Toolbox);
+
 // Get some runtime config from envvars
 // Namespace the operator lives in
-const NAMESPACE = process.env.NAMESPACE || 'pm8s-system';
+const NAMESPACE = process.env.NAMESPACE || 'eevee-bot';
 
 // Should the operator only watch its own namespace for CRs
 const WATCH_OTHER_NAMESPACES_ENV =
@@ -66,7 +78,7 @@ async function checkCRDs() {
     try {
       const found = await customObjectsApi.getAPIResources(managedCrds[i]);
       crds.push(found);
-    } catch (error) {
+    } catch (error: any) {
       if (error.message.includes('404')) {
         return false;
       }
@@ -89,7 +101,7 @@ async function setupResourceWatchers() {
       crd.version,
       crd.plural,
       crd.handler,
-      PM8S_WATCH_OTHER_NAMESPACES ? PM8S_NAMESPACE : undefined
+      WATCH_OTHER_NAMESPACES ? NAMESPACE : undefined
     );
   });
 }

@@ -1,6 +1,6 @@
 {
   "name": "@eeveebot/operator",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "the eevee operator",
   "keywords": [],
   "main": "dist/main.mjs",
@@ -10,6 +10,8 @@
   "scripts": {
     "test": "npx eslint src/",
     "build": "npm run test && npx tsc",
+    "dev": "npm run build && node dist/main.mjs",
+    "devtest": "npm run build && node dist/test.mjs",
     "update-libraries": "npm install --save @thehonker/k8s-operator@latest @eeveebot/crds@latest"
   },
   "type": "module",
