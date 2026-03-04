@@ -1,6 +1,6 @@
 {
   "name": "@eeveebot/operator",
-  "version": "0.0.2",
+  "version": "0.0.4",
   "description": "the eevee operator",
   "keywords": [],
   "main": "dist/main.mjs",
@@ -8,7 +8,8 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "test": "npx eslint src/"
+    "test": "npx eslint src/",
+    "update-libraries": "npm install --save @thehonker/k8s-operator@latest @eeveebot/crds@latest"
   },
   "type": "module",
   "devDependencies": {
@@ -21,7 +22,7 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@eeveebot/crds": "^0.4.70",
+    "@eeveebot/crds": "^0.5.9",
     "@thehonker/k8s-operator": "^3.1.1-alpha.9",
     "winston": "^3.19.0"
   }
