@@ -5,7 +5,7 @@ import * as K8s from '@kubernetes/client-node';
 import { default as Operator } from '@thehonker/k8s-operator';
 
 // Critical
-import { eevee_logo } from './lib/logo.mjs';
+import { eeveeLogo } from './lib/logo.mjs';
 
 // Logging
 import { log, opLogger } from './lib/logging.mjs';
@@ -41,7 +41,7 @@ process.on('SIGTERM', () => exit('SIGTERM'));
 process.on('SIGINT', () => exit('SIGINT'));
 
 // Start of logic
-console.error(eevee_logo);
+console.error(eeveeLogo);
 log.info('eevee operator starting up...');
 
 // Ensure CRDs are installed ahead of time
@@ -78,6 +78,7 @@ async function checkCRDs() {
     try {
       const found = await customObjectsApi.getAPIResources(managedCrds[i]);
       crds.push(found);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       if (error.message.includes('404')) {
         return false;

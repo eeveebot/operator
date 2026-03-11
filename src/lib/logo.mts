@@ -1,6 +1,6 @@
 'use strict';
 
-export const eevee_logo: string = `
+export const eeveeLogo: string = `
 
                    @@@@@@@@@                                     
               %@@%#-:::::@%                                      

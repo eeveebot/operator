@@ -12,9 +12,14 @@ export const managedCrds: managedCrd[] = [
     version: eevee.ChatConnectionIrc.details.version,
     plural: eevee.ChatConnectionIrc.details.plural,
     handler: handleResourceEvent,
+    reconciler: reconcileResource,
   },
 ];
 
 async function handleResourceEvent(event: ResourceEvent): Promise<void> {
   log.debug(event);
+}
+
+async function reconcileResource(): Promise<void> {
+  log.debug('reconcileResource in chatconnectionirc called');
 }

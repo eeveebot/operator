@@ -12,9 +12,14 @@ export const managedCrds: managedCrd[] = [
     version: eevee.IpcConfig.details.version,
     plural: eevee.IpcConfig.details.plural,
     handler: handleResourceEvent,
+    reconciler: reconcileResource,
   },
 ];
 
 async function handleResourceEvent(event: ResourceEvent): Promise<void> {
   log.debug(event);
+}
+
+async function reconcileResource(): Promise<void> {
+  log.debug('reconcileResource in ipcconfig called');
 }
