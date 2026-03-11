@@ -28,59 +28,59 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
     event.meta.name,
     event.meta.namespace
   );
-  
+
   // Handle specific event types differently
   switch (event.type) {
     case ResourceEventType.Added:
-    log.info(
-      `IpcConfig resource added: ${event.meta.name} in namespace ${event.meta.namespace || 'unknown'}`
-    );
-    // The reconciler will ensure the deployment exists
-    try {
-      await reconcileResource(kc);
-    } catch (error) {
-      log.error('Error during reconciliation:', error);
-    }
-    break;
-    case ResourceEventType.Modified:
-    log.info(
-      `IpcConfig resource modified: ${event.meta.name} in namespace ${event.meta.namespace || 'unknown'}`
-    );
-    // The reconciler will ensure the deployment is in the correct state
-    try {
-      await reconcileResource(kc);
-    } catch (error) {
-      log.error('Error during reconciliation:', error);
-    }
-    break;
-    case ResourceEventType.Deleted:
-    log.info(
-      `IpcConfig resource deleted: ${event.meta.name} in namespace ${event.meta.namespace || 'unknown'}`
-    );
-    // Delete the associated deployment when IpcConfig resource is deleted
-    if (event.meta.namespace) {
+      log.info(
+        `IpcConfig resource added: ${event.meta.name} in namespace ${event.meta.namespace || 'unknown'}`
+      );
+      // The reconciler will ensure the deployment exists
       try {
-        const appsV1Api = kc.makeApiClient(K8s.AppsV1Api);
-        await appsV1Api.deleteNamespacedDeployment({
-          name: `eevee-nats-${event.meta.name}`,
-          namespace: event.meta.namespace,
-        });
-        log.info(
-          `Deleted deployment eevee-nats-${event.meta.name} in namespace ${event.meta.namespace}`
-        );
+        await reconcileResource(kc);
       } catch (error) {
-        log.error(
-          `Failed to delete deployment eevee-nats-${event.meta.name} in namespace ${event.meta.namespace}:`,
-          error
+        log.error('Error during reconciliation:', error);
+      }
+      break;
+    case ResourceEventType.Modified:
+      log.info(
+        `IpcConfig resource modified: ${event.meta.name} in namespace ${event.meta.namespace || 'unknown'}`
+      );
+      // The reconciler will ensure the deployment is in the correct state
+      try {
+        await reconcileResource(kc);
+      } catch (error) {
+        log.error('Error during reconciliation:', error);
+      }
+      break;
+    case ResourceEventType.Deleted:
+      log.info(
+        `IpcConfig resource deleted: ${event.meta.name} in namespace ${event.meta.namespace || 'unknown'}`
+      );
+      // Delete the associated deployment when IpcConfig resource is deleted
+      if (event.meta.namespace) {
+        try {
+          const appsV1Api = kc.makeApiClient(K8s.AppsV1Api);
+          await appsV1Api.deleteNamespacedDeployment({
+            name: `eevee-nats-${event.meta.name}`,
+            namespace: event.meta.namespace,
+          });
+          log.info(
+            `Deleted deployment eevee-nats-${event.meta.name} in namespace ${event.meta.namespace}`
+          );
+        } catch (error) {
+          log.error(
+            `Failed to delete deployment eevee-nats-${event.meta.name} in namespace ${event.meta.namespace}:`,
+            error
+          );
+        }
+      } else {
+        log.warn(
+          `Cannot delete deployment for IpcConfig ${event.meta.name} - no namespace specified`
         );
       }
-    } else {
-      log.warn(
-        `Cannot delete deployment for IpcConfig ${event.meta.name} - no namespace specified`
-      );
-    }
-    // No reconciliation needed for deletions
-    break;
+      // No reconciliation needed for deletions
+      break;
   }
 }
 
@@ -89,29 +89,30 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
     log.error('KubeConfig not provided to ipcconfig reconciler');
     return;
   }
-  
+
   const appsV1Api = kc.makeApiClient(K8s.AppsV1Api);
+  const coreV1Api = kc.makeApiClient(K8s.CoreV1Api);
   const customObjectsApi = kc.makeApiClient(K8s.CustomObjectsApi);
-  
+
   try {
     // List all IpcConfig custom resources
     const ipcConfigList =
-    await customObjectsApi.listCustomObjectForAllNamespaces({
-      group: eevee.IpcConfig.details.group,
-      version: eevee.IpcConfig.details.version,
-      plural: eevee.IpcConfig.details.plural,
-    });
-    
+      await customObjectsApi.listCustomObjectForAllNamespaces({
+        group: eevee.IpcConfig.details.group,
+        version: eevee.IpcConfig.details.version,
+        plural: eevee.IpcConfig.details.plural,
+      });
+
     // For each IpcConfig resource, ensure a deployment exists in its namespace
     if (ipcConfigList.body?.items) {
       for (const item of ipcConfigList.body.items) {
         const namespace = item.metadata?.namespace;
         const name = item.metadata?.name;
         if (!namespace || !name) continue;
-        
+
         // Generate deployment name based on ipcconfig custom resource object name
         const deploymentName = `eevee-nats-${name}`;
-        
+
         // Check if deployment exists
         try {
           await appsV1Api.readNamespacedDeployment({
@@ -128,6 +129,9 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
           );
           await createNatsDeployment(appsV1Api, namespace, name);
         }
+
+        // Ensure the corresponding service exists
+        await createNatsService(coreV1Api, namespace, name);
       }
     }
   } catch (error) {
@@ -139,12 +143,11 @@ async function createNatsDeployment(
   appsV1Api: K8s.AppsV1Api,
   namespace: string,
   ipcConfigName: string
-): Promise<void>
-{
+): Promise<void> {
   // Try to fetch the IPC config to get NATS token settings
   const natsEnvVars: K8s.V1EnvVar[] = [];
   let natsTokenSecretName: string | undefined;
-  
+
   try {
     const customObjectsApi = kc.makeApiClient(K8s.CustomObjectsApi);
     const coreV1Api = kc.makeApiClient(K8s.CoreV1Api);
@@ -155,7 +158,7 @@ async function createNatsDeployment(
       plural: eevee.IpcConfig.details.plural,
       name: ipcConfigName,
     });
-    
+
     // Define type for IPC config response
     interface IpcConfigResponse {
       spec?: {
@@ -171,13 +174,13 @@ async function createNatsDeployment(
         };
       };
     }
-    
+
     const ipcConfig = ipcConfigResponse.body as IpcConfigResponse;
     const natsTokenConfig = ipcConfig?.spec?.nats?.token;
-    
+
     if (natsTokenConfig?.secretKeyRef) {
       natsTokenSecretName = natsTokenConfig.secretKeyRef.secret.name;
-      
+
       // Check if the secret exists, and create it if it doesn't
       try {
         await coreV1Api.readNamespacedSecret({
@@ -199,10 +202,7 @@ async function createNatsDeployment(
           ipcConfigName
         );
       }
-      
-      // Create the corresponding service
-      await createNatsService(coreV1Api, namespace, ipcConfigName);
-      
+
       // Add NATS token to environment variables
       natsEnvVars.push({
         name: 'NATS_TOKEN',
@@ -220,7 +220,61 @@ async function createNatsDeployment(
       error
     );
   }
-  
+
+  // Generate deployment name based on ipcconfig name
+  const deploymentName = `eevee-nats-${ipcConfigName}`;
+
+  // Prepare command arguments for NATS server with auth
+  const commandArgs = ['--auth', '$NATS_TOKEN'];
+
+  const deployment: K8s.V1Deployment = {
+    metadata: {
+      name: deploymentName,
+      namespace: namespace,
+    },
+    spec: {
+      replicas: 1,
+      selector: {
+        matchLabels: {
+          app: 'eevee-nats',
+        },
+      },
+      template: {
+        metadata: {
+          labels: {
+            app: 'eevee-nats',
+          },
+        },
+        spec: {
+          containers: [
+            {
+              name: 'nats',
+              image: 'docker.io/nats:latest',
+              imagePullPolicy: 'Always',
+              command: ['nats-server'],
+              args: commandArgs,
+              ports: [
+                {
+                  containerPort: 4222,
+                  name: 'client',
+                },
+                {
+                  containerPort: 8222,
+                  name: 'management',
+                },
+                {
+                  containerPort: 6222,
+                  name: 'cluster',
+                },
+              ],
+              env: natsEnvVars,
+            },
+          ],
+        },
+      },
+    },
+  };
+
   try {
     await appsV1Api.createNamespacedDeployment({
       namespace: namespace,
@@ -229,91 +283,7 @@ async function createNatsDeployment(
     log.info(
       `Successfully created NATS deployment ${deploymentName} in namespace ${namespace}`
     );
-    
-    // Add NATS token to environment variables
-    natsEnvVars.push({
-      name: 'NATS_TOKEN',
-      valueFrom: {
-        secretKeyRef: {
-          name: natsTokenSecretName,
-          key: 'token',
-        },
-      },
-    });
-    
-    // Create the corresponding service
-    await createNatsService(coreV1Api, namespace, ipcConfigName);
-    
-    // Generate deployment name based on ipcconfig name
-    const deploymentName = `eevee-nats-${ipcConfigName}`;
-    
-    // Prepare command arguments for NATS server with auth
-    const commandArgs = ['--auth', '$NATS_TOKEN'];
-    
-    const deployment: K8s.V1Deployment = {
-      metadata: {
-        name: deploymentName,
-        namespace: namespace,
-      },
-      spec: {
-        replicas: 1,
-        selector: {
-          matchLabels: {
-            app: 'eevee-nats',
-          },
-        },
-        template: {
-          metadata: {
-            labels: {
-              app: 'eevee-nats',
-            },
-          },
-          spec: {
-            containers: [
-              {
-                name: 'nats',
-                image: 'docker.io/nats:latest',
-                imagePullPolicy: 'Always',
-                command: ['nats-server'],
-                args: commandArgs,
-                ports: [
-                  {
-                    containerPort: 4222,
-                    name: 'client',
-                  },
-                  {
-                    containerPort: 8222,
-                    name: 'management',
-                  },
-                  {
-                    containerPort: 6222,
-                    name: 'cluster',
-                  },
-                ],
-                env: natsEnvVars,
-              },
-            ],
-          },
-        },
-      },
-    };
-    
-    try {
-      await appsV1Api.createNamespacedDeployment({
-        namespace: namespace,
-        body: deployment,
-      });
-      log.info(
-        `Successfully created NATS deployment ${deploymentName} in namespace ${namespace}`
-      );
-    } catch (error) {
-      log.error(
-        `Failed to create NATS deployment in namespace ${namespace}:`,
-        error
-      );
-    }
-  }
-  catch (error) {
+  } catch (error) {
     log.error(
       `Failed to create NATS deployment in namespace ${namespace}:`,
       error
@@ -322,22 +292,22 @@ async function createNatsDeployment(
 }
 
 /**
-* Generates a random token for NATS authentication
-* @returns A random 32-character hexadecimal string
-*/
+ * Generates a random token for NATS authentication
+ * @returns A random 32-character hexadecimal string
+ */
 function generateRandomToken(): string {
   return Array.from({ length: 32 }, () =>
     Math.floor(Math.random() * 16).toString(16)
-).join('');
+  ).join('');
 }
 
 /**
-* Creates a Kubernetes secret containing a NATS authentication token
-* @param coreV1Api The Kubernetes CoreV1Api client
-* @param namespace The namespace to create the secret in
-* @param secretName The name of the secret to create
-* @param ipcConfigName The name of the IPC config custom resource
-*/
+ * Creates a Kubernetes secret containing a NATS authentication token
+ * @param coreV1Api The Kubernetes CoreV1Api client
+ * @param namespace The namespace to create the secret in
+ * @param secretName The name of the secret to create
+ * @param ipcConfigName The name of the IPC config custom resource
+ */
 async function createNatsTokenSecret(
   coreV1Api: K8s.CoreV1Api,
   namespace: string,
@@ -346,7 +316,7 @@ async function createNatsTokenSecret(
 ): Promise<void> {
   // Generate a random token
   const token = generateRandomToken();
-  
+
   // Create the secret object
   const secret: K8s.V1Secret = {
     metadata: {
@@ -361,7 +331,7 @@ async function createNatsTokenSecret(
       ).toString('base64'),
     },
   };
-  
+
   try {
     await coreV1Api.createNamespacedSecret({
       namespace: namespace,
@@ -380,11 +350,11 @@ async function createNatsTokenSecret(
 }
 
 /**
-* Creates a Kubernetes service for the NATS deployment
-* @param coreV1Api The Kubernetes CoreV1Api client
-* @param namespace The namespace to create the service in
-* @param ipcConfigName The name of the IPC config custom resource
-*/
+ * Creates a Kubernetes service for the NATS deployment
+ * @param coreV1Api The Kubernetes CoreV1Api client
+ * @param namespace The namespace to create the service in
+ * @param ipcConfigName The name of the IPC config custom resource
+ */
 async function createNatsService(
   coreV1Api: K8s.CoreV1Api,
   namespace: string,
@@ -392,7 +362,7 @@ async function createNatsService(
 ): Promise<void> {
   // Generate service name based on ipcconfig name
   const serviceName = `eevee-nats-${ipcConfigName}`;
-  
+
   // Check if service already exists
   try {
     await coreV1Api.readNamespacedService({
@@ -405,9 +375,11 @@ async function createNatsService(
     return;
   } catch {
     // Service doesn't exist, create it
-    log.info(`Creating service ${serviceName} in namespace ${namespace}`);
+    log.info(
+      `Creating new NATS service ${serviceName} in namespace ${namespace}`
+    );
   }
-  
+
   // Create the service object with ClusterIP type
   const service: K8s.V1Service = {
     metadata: {
@@ -441,7 +413,7 @@ async function createNatsService(
       ],
     },
   };
-  
+
   try {
     await coreV1Api.createNamespacedService({
       namespace: namespace,
