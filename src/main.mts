@@ -78,7 +78,7 @@ async function checkCRDs() {
     try {
       const found = await customObjectsApi.getAPIResources(managedCrds[i]);
       crds.push(found);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       if (error.message.includes('404')) {
         return false;
