@@ -22,7 +22,7 @@ RUN --mount=type=secret,id=GITHUB_TOKEN,env=GITHUB_TOKEN \
 RUN set -exu \
   && cd /build \
   && npm install --include=dev \
-  && make ci \
+  && npm run build \
   && rm -f .npmrc
 
 FROM docker.io/node:24-alpine
