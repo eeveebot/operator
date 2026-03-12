@@ -105,7 +105,7 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
 
     // For each IpcConfig resource, ensure a deployment exists in its namespace
     if (ipcConfigList.body?.items) {
-      for (const item of ipcConfigList.body.items as IpcConfigItem[]) {
+      for (const item of ipcConfigList.body.items as eevee.IpcConfig.ipcconfigResource[]) {
         const namespace = item.metadata?.namespace;
         const name = item.metadata?.name;
         if (!namespace || !name) continue;
