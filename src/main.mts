@@ -54,6 +54,9 @@ if (!(await checkCRDs())) {
 // Setup resource watchers so we know when CR objects change
 await setupResourceWatchers();
 
+// Run initial reconciliation for all resource types
+await runInitialReconciliation();
+
 /**
  * Cleanup before exit
  * Forces exit after 5 seconds if cleanup fails
@@ -105,6 +108,23 @@ async function setupResourceWatchers() {
       WATCH_OTHER_NAMESPACES ? NAMESPACE : undefined
     );
   });
+}
+
+/**
+ * Run initial reconciliation for all resource types
+ */
+async function runInitialReconciliation() {
+  log.info('running initial reconciliation for all resource types');
+  for (const crd of managedCrds) {
+    if (crd.reconciler) {
+      try {
+        await crd.reconciler(kc);
+        log.info(`reconciliation completed for ${crd.plural}`);
+      } catch (error) {
+        log.error(`reconciliation failed for ${crd.plural}:`, error);
+      }
+    }
+  }
 }
 
 function parseBool(value: string | undefined): boolean {

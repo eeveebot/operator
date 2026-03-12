@@ -130,8 +130,8 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
           await createNatsDeployment(appsV1Api, namespace, name);
         }
 
-        // Ensure the corresponding service exists
-        await createNatsService(coreV1Api, namespace, name);
+        // Ensure the corresponding service exists or is updated
+        await createOrUpdateNatsService(coreV1Api, namespace, name);
       }
     }
   } catch (error) {
@@ -350,12 +350,12 @@ async function createNatsTokenSecret(
 }
 
 /**
- * Creates a Kubernetes service for the NATS deployment
+ * Creates or updates a Kubernetes service for the NATS deployment
  * @param coreV1Api The Kubernetes CoreV1Api client
- * @param namespace The namespace to create the service in
+ * @param namespace The namespace to create/update the service in
  * @param ipcConfigName The name of the IPC config custom resource
  */
-async function createNatsService(
+async function createOrUpdateNatsService(
   coreV1Api: K8s.CoreV1Api,
   namespace: string,
   ipcConfigName: string
@@ -363,25 +363,8 @@ async function createNatsService(
   // Generate service name based on ipcconfig name
   const serviceName = `eevee-nats-${ipcConfigName}`;
 
-  // Check if service already exists
-  try {
-    await coreV1Api.readNamespacedService({
-      name: serviceName,
-      namespace: namespace,
-    });
-    log.debug(
-      `Service ${serviceName} already exists in namespace ${namespace}`
-    );
-    return;
-  } catch {
-    // Service doesn't exist, create it
-    log.info(
-      `Creating new NATS service ${serviceName} in namespace ${namespace}`
-    );
-  }
-
-  // Create the service object with ClusterIP type
-  const service: K8s.V1Service = {
+  // Define the service object with ClusterIP type
+  const desiredService: K8s.V1Service = {
     metadata: {
       name: serviceName,
       namespace: namespace,
@@ -414,19 +397,74 @@ async function createNatsService(
     },
   };
 
+  // Check if service already exists
   try {
-    await coreV1Api.createNamespacedService({
+    const existingServiceResponse = await coreV1Api.readNamespacedService({
+      name: serviceName,
       namespace: namespace,
-      body: service,
     });
+
+    const existingService: K8s.V1Service = existingServiceResponse.body;
+
+    // Compare the existing service with the desired configuration
+    // Check selector, ports, and service type
+    const selectorsMatch =
+      JSON.stringify(existingService.spec?.selector) ===
+      JSON.stringify(desiredService.spec?.selector);
+
+    const portsMatch =
+      JSON.stringify(existingService.spec?.ports) ===
+      JSON.stringify(desiredService.spec?.ports);
+
+    const typeMatch = existingService.spec?.type === desiredService.spec?.type;
+
+    if (selectorsMatch && portsMatch && typeMatch) {
+      log.debug(
+        `Service ${serviceName} already exists with correct configuration in namespace ${namespace}`
+      );
+    } else {
+      // Service exists but configuration differs, update it
+      log.info(
+        `Updating NATS service ${serviceName} in namespace ${namespace} due to configuration changes`
+      );
+
+      try {
+        await coreV1Api.replaceNamespacedService({
+          name: serviceName,
+          namespace: namespace,
+          body: desiredService,
+        });
+        log.info(
+          `Successfully updated service ${serviceName} in namespace ${namespace}`
+        );
+      } catch (error) {
+        log.error(
+          `Failed to update service ${serviceName} in namespace ${namespace}:`,
+          error
+        );
+        throw error;
+      }
+    }
+  } catch {
+    // Service doesn't exist, create it
     log.info(
-      `Successfully created service ${serviceName} in namespace ${namespace}`
+      `Creating new NATS service ${serviceName} in namespace ${namespace}`
     );
-  } catch (error) {
-    log.error(
-      `Failed to create service ${serviceName} in namespace ${namespace}:`,
-      error
-    );
-    throw error;
+
+    try {
+      await coreV1Api.createNamespacedService({
+        namespace: namespace,
+        body: desiredService,
+      });
+      log.info(
+        `Successfully created service ${serviceName} in namespace ${namespace}`
+      );
+    } catch (error) {
+      log.error(
+        `Failed to create service ${serviceName} in namespace ${namespace}:`,
+        error
+      );
+      throw error;
+    }
   }
 }

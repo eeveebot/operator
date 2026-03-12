@@ -9,5 +9,5 @@ export interface managedCrd {
   version: string;
   plural: string;
   handler: (event: ResourceEvent) => Promise<void>;
-  reconciler: (kc?: K8s.KubeConfig) => Promise<void>;
+  reconciler?: (kc?: K8s.KubeConfig) => Promise<void>;
 }
