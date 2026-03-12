@@ -6,10 +6,16 @@ import * as K8s from '@kubernetes/client-node';
 
 import { log } from '../../lib/logging.mjs';
 import { managedCrd } from '../../lib/managers/types.mjs';
+import { parseBool } from '../../lib/functions.mjs';
 
 // Create KubeConfig for this manager
 const kc = new K8s.KubeConfig();
-kc.loadFromDefault();
+const KUBE_IN_CLUSTER_CONFIG = parseBool(process.env.KUBE_IN_CLUSTER_CONFIG);
+if (KUBE_IN_CLUSTER_CONFIG) {
+  kc.loadFromCluster();
+} else {
+  kc.loadFromDefault();
+}
 
 export const managedCrds: managedCrd[] = [
   {

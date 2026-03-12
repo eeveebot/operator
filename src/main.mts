@@ -13,6 +13,9 @@ import { log, opLogger } from './lib/logging.mjs';
 // Import managedCrd objects
 import { managedCrd } from './lib/managers/types.mjs';
 
+// Import utility functions
+import { parseBool } from './lib/functions.mjs';
+
 import { managedCrds as ChatConnectionIrc } from './lib/managers/eevee.bot.v1.ChatConnectionIrc.mjs';
 import { managedCrds as IpcConfig } from './lib/managers/eevee.bot.v1.IpcConfig.mjs';
 import { managedCrds as Toolbox } from './lib/managers/eevee.bot.v1.Toolbox.mjs';
@@ -33,7 +36,12 @@ const WATCH_OTHER_NAMESPACES = parseBool(WATCH_OTHER_NAMESPACES_ENV);
 
 // Setup some k8s stuff early
 const kc = new K8s.KubeConfig();
-kc.loadFromDefault();
+const KUBE_IN_CLUSTER_CONFIG = parseBool(process.env.KUBE_IN_CLUSTER_CONFIG);
+if (KUBE_IN_CLUSTER_CONFIG) {
+  kc.loadFromCluster();
+} else {
+  kc.loadFromDefault();
+}
 const op = new Operator(kc, new opLogger());
 
 // Signal handlers
@@ -125,11 +133,4 @@ async function runInitialReconciliation() {
       }
     }
   }
-}
-
-function parseBool(value: string | undefined): boolean {
-  if (value) {
-    return value.toLowerCase() === 'true' || value === '1';
-  }
-  return false;
 }
