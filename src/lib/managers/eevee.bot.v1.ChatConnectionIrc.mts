@@ -62,15 +62,15 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
         try {
           const appsV1Api = kc.makeApiClient(K8s.AppsV1Api);
           await appsV1Api.deleteNamespacedDeployment({
-            name: `eevee-connector-irc-${event.meta.name}`,
+            name: `eevee-${event.meta.name}-irc-connector`,
             namespace: event.meta.namespace,
           });
           log.info(
-            `Deleted deployment eevee-connector-irc-${event.meta.name} in namespace ${event.meta.namespace}`
+            `Deleted deployment eevee-${event.meta.name}-irc-connector in namespace ${event.meta.namespace}`
           );
         } catch (error) {
           log.error(
-            `Failed to delete deployment eevee-connector-irc-${event.meta.name} in namespace ${event.meta.namespace}:`,
+            `Failed to delete deployment eevee-${event.meta.name}-irc-connector in namespace ${event.meta.namespace}:`,
             error
           );
         }
@@ -110,7 +110,7 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
         if (!namespace || !name) continue;
 
         // Generate deployment name based on chatconnectionirc custom resource object name
-        const deploymentName = `eevee-connector-irc-${name}`;
+        const deploymentName = `eevee-${name}-irc-connector`;
 
         // Check if deployment exists
         try {
@@ -145,7 +145,7 @@ async function createIrcConnectorDeployment(
   item: eevee.ChatConnectionIrc.chatconnectionircResource
 ): Promise<void> {
   // Generate deployment name based on chatconnectionirc name
-  const deploymentName = `eevee-connector-irc-${ircConfigName}`;
+  const deploymentName = `eevee-${ircConfigName}-irc-connector`;
 
   // Get the image from the ChatConnectionIrc spec if available
   let ircImage = 'ghcr.io/eeveebot/connector-irc:latest';
@@ -219,19 +219,20 @@ async function createIrcConnectorDeployment(
       replicas: 1,
       selector: {
         matchLabels: {
-          app: 'eevee-connector-irc',
+          'eevee.bot/irc-connector': 'true',
         },
       },
       template: {
         metadata: {
           labels: {
-            app: 'eevee-connector-irc',
+            app: 'eevee.bot',
+            'eevee.bot/irc-connector': 'true',
           },
         },
         spec: {
           containers: [
             {
-              name: 'connector-irc',
+              name: 'irc-connector',
               image: ircImage,
               imagePullPolicy: pullPolicy,
               env: containerEnvVars,

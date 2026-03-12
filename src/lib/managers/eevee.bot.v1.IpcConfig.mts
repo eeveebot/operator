@@ -62,15 +62,15 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
         try {
           const appsV1Api = kc.makeApiClient(K8s.AppsV1Api);
           await appsV1Api.deleteNamespacedDeployment({
-            name: `eevee-nats-${event.meta.name}`,
+            name: `eevee-${event.meta.name}-nats`,
             namespace: event.meta.namespace,
           });
           log.info(
-            `Deleted deployment eevee-nats-${event.meta.name} in namespace ${event.meta.namespace}`
+            `Deleted deployment eevee-${event.meta.name}-nats in namespace ${event.meta.namespace}`
           );
         } catch (error) {
           log.error(
-            `Failed to delete deployment eevee-nats-${event.meta.name} in namespace ${event.meta.namespace}:`,
+            `Failed to delete deployment eevee-${event.meta.name}-nats in namespace ${event.meta.namespace}:`,
             error
           );
         }
@@ -112,7 +112,7 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
         if (!namespace || !name) continue;
 
         // Generate deployment name based on ipcconfig custom resource object name
-        const deploymentName = `eevee-nats-${name}`;
+        const deploymentName = `eevee-${name}-nats`;
 
         // Check if deployment exists
         try {
@@ -201,7 +201,7 @@ async function createNatsDeployment(
   }
 
   // Generate deployment name based on ipcconfig name
-  const deploymentName = `eevee-nats-${ipcConfigName}`;
+  const deploymentName = `eevee-${ipcConfigName}-nats`;
 
   // Prepare command arguments for NATS server with auth
   const commandArgs = ['--auth', '$NATS_TOKEN'];
@@ -239,19 +239,20 @@ async function createNatsDeployment(
       replicas: 1,
       selector: {
         matchLabels: {
-          app: 'eevee-nats',
+          'eevee.bot/nats-server': 'true',
         },
       },
       template: {
         metadata: {
           labels: {
-            app: 'eevee-nats',
+            app: 'eevee.bot',
+            'eevee.bot/nats-server': 'true',
           },
         },
         spec: {
           containers: [
             {
-              name: 'nats',
+              name: 'nats-server',
               image: natsImage,
               imagePullPolicy: 'Always',
               command: ['nats-server'],
@@ -273,6 +274,11 @@ async function createNatsDeployment(
               env: natsEnvVars,
             },
           ],
+          securityContext: {
+            runAsUser: 1000,
+            runAsGroup: 1000,
+            fsGroup: 1000,
+          },
         },
       },
     },
@@ -330,7 +336,7 @@ async function createNatsTokenSecret(
     data: {
       token: Buffer.from(token).toString('base64'),
       host: Buffer.from(
-        `eevee-nats-${ipcConfigName}.${namespace}.svc.cluster.local`
+        `eevee-${ipcConfigName}-nats.${namespace}.svc.cluster.local`
       ).toString('base64'),
     },
   };
@@ -364,7 +370,7 @@ async function createOrUpdateNatsService(
   ipcConfigName: string
 ): Promise<void> {
   // Generate service name based on ipcconfig name
-  const serviceName = `eevee-nats-${ipcConfigName}`;
+  const serviceName = `eevee-${ipcConfigName}-nats`;
 
   // Define the service object with ClusterIP type
   const desiredService: K8s.V1Service = {
@@ -375,7 +381,7 @@ async function createOrUpdateNatsService(
     spec: {
       type: 'ClusterIP',
       selector: {
-        app: 'eevee-nats',
+        'eevee.bot/nats-server': 'true',
       },
       ports: [
         {

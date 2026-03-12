@@ -62,15 +62,15 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
         try {
           const appsV1Api = kc.makeApiClient(K8s.AppsV1Api);
           await appsV1Api.deleteNamespacedDeployment({
-            name: `eevee-toolbox-${event.meta.name}`,
+            name: `eevee-${event.meta.name}-toolbox`,
             namespace: event.meta.namespace,
           });
           log.info(
-            `Deleted deployment eevee-toolbox-${event.meta.name} in namespace ${event.meta.namespace}`
+            `Deleted deployment eevee-${event.meta.name}-toolbox in namespace ${event.meta.namespace}`
           );
         } catch (error) {
           log.error(
-            `Failed to delete deployment eevee-toolbox-${event.meta.name} in namespace ${event.meta.namespace}:`,
+            `Failed to delete deployment eevee-${event.meta.name}-toolbox in namespace ${event.meta.namespace}:`,
             error
           );
         }
@@ -111,7 +111,7 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
         if (!namespace || !name) continue;
 
         // Generate deployment name based on toolbox custom resource object name
-        const deploymentName = `eevee-toolbox-${name}`;
+        const deploymentName = `eevee-${name}-toolbox`;
 
         // Check if deployment exists
         try {
@@ -218,7 +218,7 @@ async function createToolboxDeployment(
   }
 
   // Generate deployment name based on toolbox name
-  const deploymentName = `eevee-toolbox-${toolboxName}`;
+  const deploymentName = `eevee-${toolboxName}-toolbox`;
 
   // Get the image from the Toolbox spec if available
   let toolboxImage = 'ghcr.io/eeveebot/cli:latest';
@@ -277,19 +277,20 @@ async function createToolboxDeployment(
       replicas: 1,
       selector: {
         matchLabels: {
-          app: 'eevee-toolbox',
+          'eevee.bot/toolbox': 'true',
         },
       },
       template: {
         metadata: {
           labels: {
-            app: 'eevee-toolbox',
+            app: 'eevee.bot',
+            'eevee.bot/toolbox': 'true',
           },
         },
         spec: {
           containers: [
             {
-              name: 'toolbox',
+              name: 'eevee-toolbox',
               image: toolboxImage,
               imagePullPolicy: pullPolicy,
               env: containerEnvVars,
