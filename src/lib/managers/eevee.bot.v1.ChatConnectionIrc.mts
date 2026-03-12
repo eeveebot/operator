@@ -126,7 +126,7 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
           log.info(
             `Creating deployment ${deploymentName} in namespace ${namespace}`
           );
-          await createIrcConnectorDeployment(appsV1Api, namespace, name);
+          await createIrcConnectorDeployment(appsV1Api, namespace, name, item);
         }
 
         // No service needed for IRC connector
@@ -141,10 +141,25 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
 async function createIrcConnectorDeployment(
   appsV1Api: K8s.AppsV1Api,
   namespace: string,
-  ircConfigName: string
+  ircConfigName: string,
+  item: eevee.ChatConnectionIrc.chatconnectionircResource
 ): Promise<void> {
   // Generate deployment name based on chatconnectionirc name
   const deploymentName = `eevee-connector-irc-${ircConfigName}`;
+
+  // Get the image from the ChatConnectionIrc spec if available
+  let ircImage = 'ghcr.io/eeveebot/connector-irc:latest';
+  try {
+    const ircConfig = item as eevee.ChatConnectionIrc.chatconnectionircResource;
+    if (ircConfig?.spec?.image) {
+      ircImage = ircConfig.spec.image;
+    }
+  } catch (error) {
+    log.warn(
+      `Failed to process ChatConnectionIrc ${ircConfigName} for image settings:`,
+      error
+    );
+  }
 
   // Prepare environment variables for the IRC connector
   const envVars: K8s.V1EnvVar[] = [
@@ -184,7 +199,7 @@ async function createIrcConnectorDeployment(
           containers: [
             {
               name: 'connector-irc',
-              image: 'ghcr.io/eeveebot/connector-irc:latest',
+              image: ircImage,
               imagePullPolicy: 'Always',
               env: envVars,
               ports: [

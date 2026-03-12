@@ -133,6 +133,7 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
             appsV1Api,
             namespace,
             name,
+            item,
             ipcConfigName
           );
         }
@@ -147,6 +148,7 @@ async function createToolboxDeployment(
   appsV1Api: K8s.AppsV1Api,
   namespace: string,
   toolboxName: string,
+  item: eevee.Toolbox.toolboxResource,
   ipcConfigName?: string
 ): Promise<void> {
   // If ipcConfigName is provided, try to fetch the IPC config to get NATS settings
@@ -218,6 +220,20 @@ async function createToolboxDeployment(
   // Generate deployment name based on toolbox name
   const deploymentName = `eevee-toolbox-${toolboxName}`;
 
+  // Get the image from the Toolbox spec if available
+  let toolboxImage = 'ghcr.io/eeveebot/cli:latest';
+  try {
+    const toolbox = item as eevee.Toolbox.toolboxResource;
+    if (toolbox?.spec?.image) {
+      toolboxImage = toolbox.spec.image;
+    }
+  } catch (error) {
+    log.warn(
+      `Failed to process Toolbox ${toolboxName} for image settings:`,
+      error
+    );
+  }
+
   const deployment: K8s.V1Deployment = {
     metadata: {
       name: deploymentName,
@@ -240,7 +256,7 @@ async function createToolboxDeployment(
           containers: [
             {
               name: 'toolbox',
-              image: 'ghcr.io/eeveebot/cli:latest',
+              image: toolboxImage,
               imagePullPolicy: 'Always',
               env: natsEnvVars,
             },
