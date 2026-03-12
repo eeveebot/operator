@@ -47,4 +47,4 @@ COPY --from=builder /build/dist /app/dist
 
 ENTRYPOINT ["/bin/sh"]
 
-CMD ["-c", " /app/dist/main.mjs"]
+CMD ["-c", "node /app/dist/main.mjs"]
