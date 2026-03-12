@@ -105,7 +105,7 @@ async function setupResourceWatchers() {
       crd.version,
       crd.plural,
       crd.handler,
-      WATCH_OTHER_NAMESPACES ? NAMESPACE : undefined
+      WATCH_OTHER_NAMESPACES ? undefined : NAMESPACE
     );
   });
 }
