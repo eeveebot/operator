@@ -126,7 +126,7 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
           log.info(
             `Creating deployment ${deploymentName} in namespace ${namespace}`
           );
-          await createIrcConnectorDeployment(appsV1Api, namespace, name, item);
+          await createIrcConnectorDeployment(appsV1Api, namespace, name);
         }
 
         // No service needed for IRC connector
@@ -141,14 +141,10 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
 async function createIrcConnectorDeployment(
   appsV1Api: K8s.AppsV1Api,
   namespace: string,
-  ircConfigName: string,
-  item: { spec?: { ipcConfig?: string } }
+  ircConfigName: string
 ): Promise<void> {
   // Generate deployment name based on chatconnectionirc name
   const deploymentName = `eevee-connector-irc-${ircConfigName}`;
-
-  // Get the IPC config name from the ChatConnectionIrc resource
-  const ipcConfigName = item.spec?.ipcConfig;
 
   // Prepare environment variables for the IRC connector
   const envVars: K8s.V1EnvVar[] = [

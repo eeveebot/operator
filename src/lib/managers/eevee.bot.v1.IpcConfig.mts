@@ -105,7 +105,7 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
 
     // For each IpcConfig resource, ensure a deployment exists in its namespace
     if (ipcConfigList.body?.items) {
-      for (const item of ipcConfigList.body.items) {
+      for (const item of ipcConfigList.body.items as IpcConfigItem[]) {
         const namespace = item.metadata?.namespace;
         const name = item.metadata?.name;
         if (!namespace || !name) continue;
@@ -127,7 +127,7 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
           log.info(
             `Creating deployment ${deploymentName} in namespace ${namespace}`
           );
-          await createNatsDeployment(appsV1Api, namespace, name);
+          await createNatsDeployment(appsV1Api, namespace, name, item);
         }
 
         // Ensure the corresponding service exists or is updated
@@ -142,44 +142,22 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
 async function createNatsDeployment(
   appsV1Api: K8s.AppsV1Api,
   namespace: string,
-  ipcConfigName: string
+  ipcConfigName: string,
+  item: eevee.IpcConfig.ipcconfigResource
 ): Promise<void> {
   // Try to fetch the IPC config to get NATS token settings
   const natsEnvVars: K8s.V1EnvVar[] = [];
   let natsTokenSecretName: string | undefined;
 
   try {
-    const customObjectsApi = kc.makeApiClient(K8s.CustomObjectsApi);
     const coreV1Api = kc.makeApiClient(K8s.CoreV1Api);
-    const ipcConfigResponse = await customObjectsApi.getNamespacedCustomObject({
-      group: eevee.IpcConfig.details.group,
-      version: eevee.IpcConfig.details.version,
-      namespace: namespace,
-      plural: eevee.IpcConfig.details.plural,
-      name: ipcConfigName,
-    });
 
-    // Define type for IPC config response
-    interface IpcConfigResponse {
-      spec?: {
-        nats?: {
-          token?: {
-            secretKeyRef?: {
-              secret: {
-                name: string;
-              };
-              key: string;
-            };
-          };
-        };
-      };
-    }
-
-    const ipcConfig = ipcConfigResponse.body as IpcConfigResponse;
+    const ipcConfig = item as eevee.IpcConfig.ipcconfigResource;
     const natsTokenConfig = ipcConfig?.spec?.nats?.token;
 
     if (natsTokenConfig?.secretKeyRef) {
-      natsTokenSecretName = natsTokenConfig.secretKeyRef.secret.name;
+      natsTokenSecretName =
+        natsTokenConfig.secretKeyRef.secret.name || 'nats-token';
 
       // Check if the secret exists, and create it if it doesn't
       try {
@@ -216,7 +194,7 @@ async function createNatsDeployment(
     }
   } catch (error) {
     log.warn(
-      `Failed to fetch IPC config ${ipcConfigName} for NATS settings:`,
+      `Failed to process IPC config ${ipcConfigName} for NATS settings:`,
       error
     );
   }
@@ -226,6 +204,30 @@ async function createNatsDeployment(
 
   // Prepare command arguments for NATS server with auth
   const commandArgs = ['--auth', '$NATS_TOKEN'];
+
+  // Get the image from the IPC config spec if available
+  let natsImage = 'docker.io/nats:latest';
+  try {
+    interface IpcConfigSpec {
+      spec?: {
+        nats?: {
+          managed?: {
+            image?: string;
+          };
+        };
+      };
+    }
+
+    const ipcConfig = item as IpcConfigSpec;
+    if (ipcConfig?.spec?.nats?.managed?.image) {
+      natsImage = ipcConfig.spec.nats.managed.image;
+    }
+  } catch (error) {
+    log.warn(
+      `Failed to process IPC config ${ipcConfigName} for image settings:`,
+      error
+    );
+  }
 
   const deployment: K8s.V1Deployment = {
     metadata: {
@@ -249,7 +251,7 @@ async function createNatsDeployment(
           containers: [
             {
               name: 'nats',
-              image: 'docker.io/nats:latest',
+              image: natsImage,
               imagePullPolicy: 'Always',
               command: ['nats-server'],
               args: commandArgs,
