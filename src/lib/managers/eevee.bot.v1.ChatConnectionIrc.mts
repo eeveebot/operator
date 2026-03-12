@@ -149,20 +149,30 @@ async function createIrcConnectorDeployment(
 
   // Get the image from the ChatConnectionIrc spec if available
   let ircImage = 'ghcr.io/eeveebot/connector-irc:latest';
+  let metricsEnabled = false;
+  let metricsPort = 8080;
+  const pullPolicy: K8s.V1Container['imagePullPolicy'] = 'Always';
+
   try {
     const ircConfig = item as eevee.ChatConnectionIrc.chatconnectionircResource;
     if (ircConfig?.spec?.image) {
       ircImage = ircConfig.spec.image;
     }
+    if (ircConfig?.spec?.metrics !== undefined) {
+      metricsEnabled = ircConfig.spec.metrics;
+    }
+    if (ircConfig?.spec?.metricsPort) {
+      metricsPort = ircConfig.spec.metricsPort;
+    }
   } catch (error) {
     log.warn(
-      `Failed to process ChatConnectionIrc ${ircConfigName} for image settings:`,
+      `Failed to process ChatConnectionIrc ${ircConfigName} for settings:`,
       error
     );
   }
 
   // Prepare environment variables for the IRC connector
-  const envVars: K8s.V1EnvVar[] = [
+  const containerEnvVars: K8s.V1EnvVar[] = [
     {
       name: 'NAMESPACE',
       valueFrom: {
@@ -176,6 +186,29 @@ async function createIrcConnectorDeployment(
       value: ircConfigName,
     },
   ];
+
+  // Prepare container ports
+  const containerPorts: K8s.V1ContainerPort[] = [];
+
+  // Add metrics port if metrics are enabled
+  if (metricsEnabled) {
+    containerPorts.push({
+      name: 'metrics',
+      containerPort: metricsPort,
+      protocol: 'TCP',
+    });
+
+    // Add metrics environment variable
+    containerEnvVars.push({
+      name: 'METRICS_ENABLED',
+      value: 'true',
+    });
+
+    containerEnvVars.push({
+      name: 'METRICS_PORT',
+      value: metricsPort.toString(),
+    });
+  }
 
   const deployment: K8s.V1Deployment = {
     metadata: {
@@ -200,14 +233,9 @@ async function createIrcConnectorDeployment(
             {
               name: 'connector-irc',
               image: ircImage,
-              imagePullPolicy: 'Always',
-              env: envVars,
-              ports: [
-                {
-                  containerPort: 8080,
-                  name: 'metrics',
-                },
-              ],
+              imagePullPolicy: pullPolicy,
+              env: containerEnvVars,
+              ports: containerPorts,
             },
           ],
         },
@@ -221,7 +249,8 @@ async function createIrcConnectorDeployment(
       body: deployment,
     });
     log.info(
-      `Successfully created IRC connector deployment ${deploymentName} in namespace ${namespace}`
+      `Successfully created IRC connector deployment ${deploymentName} in namespace ${namespace}` +
+        `${metricsEnabled ? ` with metrics enabled on port ${metricsPort}` : ''}`
     );
   } catch (error) {
     log.error(

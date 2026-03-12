@@ -152,7 +152,7 @@ async function createToolboxDeployment(
   ipcConfigName?: string
 ): Promise<void> {
   // If ipcConfigName is provided, try to fetch the IPC config to get NATS settings
-  const natsEnvVars: K8s.V1EnvVar[] = [];
+  const containerEnvVars: K8s.V1EnvVar[] = [];
   if (ipcConfigName) {
     try {
       const customObjectsApi = kc.makeApiClient(K8s.CustomObjectsApi);
@@ -188,7 +188,7 @@ async function createToolboxDeployment(
         const secretName = natsTokenConfig.secretKeyRef.secret.name;
 
         // Add NATS_HOST from the same secret (assuming it's in a field called 'host')
-        natsEnvVars.push({
+        containerEnvVars.push({
           name: 'NATS_HOST',
           valueFrom: {
             secretKeyRef: {
@@ -199,7 +199,7 @@ async function createToolboxDeployment(
         });
 
         // Add NATS_TOKEN from the secret reference
-        natsEnvVars.push({
+        containerEnvVars.push({
           name: 'NATS_TOKEN',
           valueFrom: {
             secretKeyRef: {
@@ -222,16 +222,50 @@ async function createToolboxDeployment(
 
   // Get the image from the Toolbox spec if available
   let toolboxImage = 'ghcr.io/eeveebot/cli:latest';
+  let metricsEnabled = false;
+  let metricsPort = 8080;
+  let pullPolicy: K8s.V1Container['imagePullPolicy'] = 'Always';
+
   try {
     const toolbox = item as eevee.Toolbox.toolboxResource;
     if (toolbox?.spec?.image) {
       toolboxImage = toolbox.spec.image;
     }
+    if (toolbox?.spec?.metrics !== undefined) {
+      metricsEnabled = toolbox.spec.metrics;
+    }
+    if (toolbox?.spec?.metricsPort) {
+      metricsPort = toolbox.spec.metricsPort;
+    }
+    if (toolbox?.spec?.pullPolicy) {
+      pullPolicy = toolbox.spec
+        .pullPolicy as K8s.V1Container['imagePullPolicy'];
+    }
   } catch (error) {
-    log.warn(
-      `Failed to process Toolbox ${toolboxName} for image settings:`,
-      error
-    );
+    log.warn(`Failed to process Toolbox ${toolboxName} for settings:`, error);
+  }
+
+  // Prepare container ports
+  const containerPorts: K8s.V1ContainerPort[] = [];
+
+  // Add metrics port if metrics are enabled
+  if (metricsEnabled) {
+    containerPorts.push({
+      name: 'metrics',
+      containerPort: metricsPort,
+      protocol: 'TCP',
+    });
+
+    // Add metrics environment variable
+    containerEnvVars.push({
+      name: 'METRICS_ENABLED',
+      value: 'true',
+    });
+
+    containerEnvVars.push({
+      name: 'METRICS_PORT',
+      value: metricsPort.toString(),
+    });
   }
 
   const deployment: K8s.V1Deployment = {
@@ -257,8 +291,9 @@ async function createToolboxDeployment(
             {
               name: 'toolbox',
               image: toolboxImage,
-              imagePullPolicy: 'Always',
-              env: natsEnvVars,
+              imagePullPolicy: pullPolicy,
+              env: containerEnvVars,
+              ports: containerPorts,
             },
           ],
           securityContext: {
@@ -277,7 +312,8 @@ async function createToolboxDeployment(
       body: deployment,
     });
     log.info(
-      `Successfully created deployment eevee-toolbox in namespace ${namespace}`
+      `Successfully created deployment ${deploymentName} in namespace ${namespace}` +
+        `${metricsEnabled ? ` with metrics enabled on port ${metricsPort}` : ''}`
     );
   } catch (error) {
     log.error(`Failed to create deployment in namespace ${namespace}:`, error);
