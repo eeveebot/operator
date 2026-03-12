@@ -404,7 +404,7 @@ async function createOrUpdateNatsService(
       namespace: namespace,
     });
 
-    const existingService: K8s.V1Service = existingServiceResponse.body;
+    const existingService: K8s.V1Service = existingServiceResponse;
 
     // Compare the existing service with the desired configuration
     // Check selector, ports, and service type
