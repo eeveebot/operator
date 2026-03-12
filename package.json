@@ -2,7 +2,9 @@
   "name": "@eeveebot/operator",
   "version": "0.0.9",
   "description": "the eevee operator",
-  "keywords": [],
+  "keywords": [
+    "eevee"
+  ],
   "main": "dist/main.mjs",
   "engines": {
     "node": ">=24.0.0"
