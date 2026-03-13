@@ -17,12 +17,6 @@ if (KUBE_IN_CLUSTER_CONFIG) {
   kc.loadFromDefault();
 }
 
-// Get namespace configuration
-const NAMESPACE = process.env.NAMESPACE || 'eevee-bot';
-const WATCH_OTHER_NAMESPACES_ENV =
-  process.env.WATCH_OTHER_NAMESPACES || 'false';
-const WATCH_OTHER_NAMESPACES = parseBool(WATCH_OTHER_NAMESPACES_ENV);
-
 export const managedCrds: managedCrd[] = [
   {
     group: eevee.Toolbox.details.group,
@@ -50,7 +44,7 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
       log.debug('Triggering reconciliation for added Toolbox resource');
       // The reconciler will ensure the deployment exists
       try {
-        await reconcileResource(kc);
+        await reconcileResource(kc, event);
         log.debug('Reconciliation completed for added Toolbox resource');
       } catch (error) {
         log.error('Error during reconciliation:', error);
@@ -63,7 +57,7 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
       log.debug('Triggering reconciliation for modified Toolbox resource');
       // The reconciler will ensure the deployment is in the correct state
       try {
-        await reconcileResource(kc);
+        await reconcileResource(kc, event);
         log.debug('Reconciliation completed for modified Toolbox resource');
       } catch (error) {
         log.error('Error during reconciliation:', error);
@@ -106,8 +100,11 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
   }
 }
 
-async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
-  log.debug('Starting toolbox reconciliation');
+async function reconcileResource(
+  kc: K8s.KubeConfig,
+  event: ResourceEvent
+): Promise<void> {
+  log.debug('Starting toolbox reconciliation for specific resource');
   if (!kc) {
     log.error('KubeConfig not provided to toolbox reconciler');
     return;
@@ -117,84 +114,71 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
   const customObjectsApi = kc.makeApiClient(K8s.CustomObjectsApi);
 
   try {
-    let toolboxList: { body?: { items?: eevee.Toolbox.toolboxResource[] } };
+    // Get the specific resource that changed
+    const resourceName = event.meta.name;
+    const resourceNamespace = event.meta.namespace;
 
-    if (WATCH_OTHER_NAMESPACES) {
-      log.debug('Listing all Toolbox custom resources');
-      // List all Toolbox custom resources
-      toolboxList = await customObjectsApi.listCustomObjectForAllNamespaces({
-        group: eevee.Toolbox.details.group,
-        version: eevee.Toolbox.details.version,
-        plural: eevee.Toolbox.details.plural,
-      });
-      log.debug('Successfully listed Toolbox resources across all namespaces');
-    } else {
-      log.debug(`Listing Toolbox custom resources in namespace ${NAMESPACE}`);
-      // List Toolbox custom resources only in the specified namespace
-      toolboxList = await customObjectsApi.listNamespacedCustomObject({
-        group: eevee.Toolbox.details.group,
-        version: eevee.Toolbox.details.version,
-        namespace: NAMESPACE,
-        plural: eevee.Toolbox.details.plural,
+    if (!resourceName || !resourceNamespace) {
+      log.error('Resource name or namespace missing from event');
+      return;
+    }
+
+    log.debug(
+      `Processing Toolbox resource ${resourceName} in namespace ${resourceNamespace}`
+    );
+
+    // Get the specific Toolbox resource
+    const toolboxResponse = await customObjectsApi.getNamespacedCustomObject({
+      group: eevee.Toolbox.details.group,
+      version: eevee.Toolbox.details.version,
+      namespace: resourceNamespace,
+      plural: eevee.Toolbox.details.plural,
+      name: resourceName,
+    });
+
+    const item = toolboxResponse.body as eevee.Toolbox.toolboxResource;
+    const namespace = item.metadata?.namespace;
+    const name = item.metadata?.name;
+
+    if (!namespace || !name) {
+      log.debug('Skipping Toolbox resource with missing namespace or name');
+      return;
+    }
+
+    // Generate deployment name based on toolbox custom resource object name
+    const deploymentName = `eevee-${name}-toolbox`;
+    log.debug(
+      `Checking for deployment ${deploymentName} in namespace ${namespace}`
+    );
+
+    // Check if deployment exists
+    try {
+      await appsV1Api.readNamespacedDeployment({
+        name: deploymentName,
+        namespace: namespace,
       });
       log.debug(
-        `Successfully listed Toolbox resources in namespace ${NAMESPACE}`,
-        toolboxList,
+        `Deployment ${deploymentName} already exists in namespace ${namespace}`
+      );
+    } catch {
+      // Deployment doesn't exist, create it
+      log.info(
+        `Creating deployment ${deploymentName} in namespace ${namespace}`
+      );
+      // Pass the ipcConfig name if specified in the Toolbox spec
+      const ipcConfigName = item.spec?.ipcConfig;
+      log.debug(
+        `IPC config name from Toolbox spec: ${ipcConfigName || 'none'}`
+      );
+      await createToolboxDeployment(
+        appsV1Api,
+        namespace,
+        name,
+        item,
+        ipcConfigName
       );
     }
 
-    // For each Toolbox resource, ensure a deployment exists in its namespace
-    if (toolboxList.body?.items) {
-      log.debug(
-        `Processing ${toolboxList.body.items.length} Toolbox resources`
-      );
-      for (const item of toolboxList.body.items) {
-        const namespace = item.metadata?.namespace;
-        const name = item.metadata?.name;
-        if (!namespace || !name) {
-          log.debug('Skipping Toolbox resource with missing namespace or name');
-          continue;
-        }
-        log.debug(
-          `Processing Toolbox resource ${name} in namespace ${namespace}`
-        );
-
-        // Generate deployment name based on toolbox custom resource object name
-        const deploymentName = `eevee-${name}-toolbox`;
-        log.debug(
-          `Checking for deployment ${deploymentName} in namespace ${namespace}`
-        );
-
-        // Check if deployment exists
-        try {
-          await appsV1Api.readNamespacedDeployment({
-            name: deploymentName,
-            namespace: namespace,
-          });
-          log.debug(
-            `Deployment ${deploymentName} already exists in namespace ${namespace}`
-          );
-        } catch {
-          // Deployment doesn't exist, create it
-          log.info(
-            `Creating deployment ${deploymentName} in namespace ${namespace}`
-          );
-          // Pass the ipcConfig name if specified in the Toolbox spec
-          const ipcConfigName = item.spec?.ipcConfig;
-          log.debug(
-            `IPC config name from Toolbox spec: ${ipcConfigName || 'none'}`
-          );
-          await createToolboxDeployment(
-            appsV1Api,
-            namespace,
-            name,
-            item,
-            ipcConfigName
-          );
-        }
-      }
-      log.debug('Finished processing all Toolbox resources');
-    }
     log.debug('Toolbox reconciliation completed successfully');
   } catch (error) {
     log.error('Error during toolbox reconciliation:', error);

@@ -17,12 +17,6 @@ if (KUBE_IN_CLUSTER_CONFIG) {
   kc.loadFromDefault();
 }
 
-// Get namespace configuration
-const NAMESPACE = process.env.NAMESPACE || 'eevee-bot';
-const WATCH_OTHER_NAMESPACES_ENV =
-  process.env.WATCH_OTHER_NAMESPACES || 'false';
-const WATCH_OTHER_NAMESPACES = parseBool(WATCH_OTHER_NAMESPACES_ENV);
-
 export const managedCrds: managedCrd[] = [
   {
     group: eevee.ChatConnectionIrc.details.group,
@@ -52,7 +46,7 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
       );
       // The reconciler will ensure the deployment exists
       try {
-        await reconcileResource(kc);
+        await reconcileResource(kc, event);
         log.debug(
           'Reconciliation completed for added ChatConnectionIrc resource'
         );
@@ -69,7 +63,7 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
       );
       // The reconciler will ensure the deployment is in the correct state
       try {
-        await reconcileResource(kc);
+        await reconcileResource(kc, event);
         log.debug(
           'Reconciliation completed for modified ChatConnectionIrc resource'
         );
@@ -114,8 +108,11 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
   }
 }
 
-async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
-  log.debug('Starting chatconnectionirc reconciliation');
+async function reconcileResource(
+  kc: K8s.KubeConfig,
+  event: ResourceEvent
+): Promise<void> {
+  log.debug('Starting chatconnectionirc reconciliation for specific resource');
   if (!kc) {
     log.error('KubeConfig not provided to chatconnectionirc reconciler');
     return;
@@ -125,87 +122,66 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
   const customObjectsApi = kc.makeApiClient(K8s.CustomObjectsApi);
 
   try {
-    let chatConnectionIrcList: {
-      body?: { items?: eevee.ChatConnectionIrc.chatconnectionircResource[] };
-    };
+    // Get the specific resource that changed
+    const resourceName = event.meta.name;
+    const resourceNamespace = event.meta.namespace;
 
-    if (WATCH_OTHER_NAMESPACES) {
-      log.debug('Listing all ChatConnectionIrc custom resources');
-      // List all ChatConnectionIrc custom resources
-      chatConnectionIrcList =
-        await customObjectsApi.listCustomObjectForAllNamespaces({
-          group: eevee.ChatConnectionIrc.details.group,
-          version: eevee.ChatConnectionIrc.details.version,
-          plural: eevee.ChatConnectionIrc.details.plural,
-        });
-      log.debug(
-        'Successfully listed ChatConnectionIrc resources across all namespaces'
-      );
-    } else {
-      log.debug(
-        `Listing ChatConnectionIrc custom resources in namespace ${NAMESPACE}`
-      );
-      // List ChatConnectionIrc custom resources only in the specified namespace
-      chatConnectionIrcList = await customObjectsApi.listNamespacedCustomObject(
-        {
-          group: eevee.ChatConnectionIrc.details.group,
-          version: eevee.ChatConnectionIrc.details.version,
-          namespace: NAMESPACE,
-          plural: eevee.ChatConnectionIrc.details.plural,
-        }
-      );
-      log.debug(
-        `Successfully listed ChatConnectionIrc resources in namespace ${NAMESPACE}`,
-        chatConnectionIrcList,
-      );
+    if (!resourceName || !resourceNamespace) {
+      log.error('Resource name or namespace missing from event');
+      return;
     }
 
-    // For each ChatConnectionIrc resource, ensure a deployment exists in its namespace
-    if (chatConnectionIrcList.body?.items) {
+    log.debug(
+      `Processing ChatConnectionIrc resource ${resourceName} in namespace ${resourceNamespace}`
+    );
+
+    // Get the specific ChatConnectionIrc resource
+    const chatConnectionIrcResponse =
+      await customObjectsApi.getNamespacedCustomObject({
+        group: eevee.ChatConnectionIrc.details.group,
+        version: eevee.ChatConnectionIrc.details.version,
+        namespace: resourceNamespace,
+        plural: eevee.ChatConnectionIrc.details.plural,
+        name: resourceName,
+      });
+
+    const item =
+      chatConnectionIrcResponse.body as eevee.ChatConnectionIrc.chatconnectionircResource;
+    const namespace = item.metadata?.namespace;
+    const name = item.metadata?.name;
+
+    if (!namespace || !name) {
       log.debug(
-        `Processing ${chatConnectionIrcList.body.items.length} ChatConnectionIrc resources`
+        'Skipping ChatConnectionIrc resource with missing namespace or name'
       );
-      for (const item of chatConnectionIrcList.body.items) {
-        const namespace = item.metadata?.namespace;
-        const name = item.metadata?.name;
-        if (!namespace || !name) {
-          log.debug(
-            'Skipping ChatConnectionIrc resource with missing namespace or name'
-          );
-          continue;
-        }
-        log.debug(
-          `Processing ChatConnectionIrc resource ${name} in namespace ${namespace}`
-        );
-
-        // Generate deployment name based on chatconnectionirc custom resource object name
-        const deploymentName = `eevee-${name}-irc-connector`;
-        log.debug(
-          `Checking for deployment ${deploymentName} in namespace ${namespace}`
-        );
-
-        // Check if deployment exists
-        try {
-          await appsV1Api.readNamespacedDeployment({
-            name: deploymentName,
-            namespace: namespace,
-          });
-          log.debug(
-            `Deployment ${deploymentName} already exists in namespace ${namespace}`
-          );
-        } catch {
-          // Deployment doesn't exist, create it
-          log.info(
-            `Creating deployment ${deploymentName} in namespace ${namespace}`
-          );
-          await createIrcConnectorDeployment(appsV1Api, namespace, name, item);
-        }
-
-        // No service needed for IRC connector
-        log.debug('No service required for IRC connector');
-      }
-      log.debug('Finished processing all ChatConnectionIrc resources');
+      return;
     }
+
+    // Generate deployment name based on chatconnectionirc custom resource object name
+    const deploymentName = `eevee-${name}-irc-connector`;
+    log.debug(
+      `Checking for deployment ${deploymentName} in namespace ${namespace}`
+    );
+
+    // Check if deployment exists
+    try {
+      await appsV1Api.readNamespacedDeployment({
+        name: deploymentName,
+        namespace: namespace,
+      });
+      log.debug(
+        `Deployment ${deploymentName} already exists in namespace ${namespace}`
+      );
+    } catch {
+      // Deployment doesn't exist, create it
+      log.info(
+        `Creating deployment ${deploymentName} in namespace ${namespace}`
+      );
+      await createIrcConnectorDeployment(appsV1Api, namespace, name, item);
+    }
+
+    // No service needed for IRC connector
+    log.debug('No service required for IRC connector');
     log.debug('ChatConnectionIrc reconciliation completed successfully');
   } catch (error) {
     log.error('Error during chatconnectionirc reconciliation:', error);

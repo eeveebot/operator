@@ -17,12 +17,6 @@ if (KUBE_IN_CLUSTER_CONFIG) {
   kc.loadFromDefault();
 }
 
-// Get namespace configuration
-const NAMESPACE = process.env.NAMESPACE || 'eevee-bot';
-const WATCH_OTHER_NAMESPACES_ENV =
-  process.env.WATCH_OTHER_NAMESPACES || 'false';
-const WATCH_OTHER_NAMESPACES = parseBool(WATCH_OTHER_NAMESPACES_ENV);
-
 export const managedCrds: managedCrd[] = [
   {
     group: eevee.IpcConfig.details.group,
@@ -50,7 +44,7 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
       log.debug('Triggering reconciliation for added IpcConfig resource');
       // The reconciler will ensure the deployment exists
       try {
-        await reconcileResource(kc);
+        await reconcileResource(kc, event);
         log.debug('Reconciliation completed for added IpcConfig resource');
       } catch (error) {
         log.error('Error during reconciliation:', error);
@@ -63,7 +57,7 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
       log.debug('Triggering reconciliation for modified IpcConfig resource');
       // The reconciler will ensure the deployment is in the correct state
       try {
-        await reconcileResource(kc);
+        await reconcileResource(kc, event);
         log.debug('Reconciliation completed for modified IpcConfig resource');
       } catch (error) {
         log.error('Error during reconciliation:', error);
@@ -106,8 +100,11 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
   }
 }
 
-async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
-  log.debug('Starting ipcconfig reconciliation');
+async function reconcileResource(
+  kc: K8s.KubeConfig,
+  event: ResourceEvent
+): Promise<void> {
+  log.debug('Starting ipcconfig reconciliation for specific resource');
   if (!kc) {
     log.error('KubeConfig not provided to ipcconfig reconciler');
     return;
@@ -118,89 +115,68 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
   const customObjectsApi = kc.makeApiClient(K8s.CustomObjectsApi);
 
   try {
-    let ipcConfigList: {
-      body?: { items?: eevee.IpcConfig.ipcconfigResource[] };
-    };
+    // Get the specific resource that changed
+    const resourceName = event.meta.name;
+    const resourceNamespace = event.meta.namespace;
 
-    if (WATCH_OTHER_NAMESPACES) {
-      log.debug('Listing all IpcConfig custom resources');
-      // List all IpcConfig custom resources
-      ipcConfigList = await customObjectsApi.listCustomObjectForAllNamespaces({
-        group: eevee.IpcConfig.details.group,
-        version: eevee.IpcConfig.details.version,
-        plural: eevee.IpcConfig.details.plural,
-      });
-      log.debug(
-        'Successfully listed IpcConfig resources across all namespaces'
-      );
-    } else {
-      log.debug(`Listing IpcConfig custom resources in namespace ${NAMESPACE}`);
-      // List IpcConfig custom resources only in the specified namespace
-      ipcConfigList = await customObjectsApi.listNamespacedCustomObject({
-        group: eevee.IpcConfig.details.group,
-        version: eevee.IpcConfig.details.version,
-        namespace: NAMESPACE,
-        plural: eevee.IpcConfig.details.plural,
-      });
-      log.debug(
-        `Successfully listed IpcConfig resources in namespace ${NAMESPACE}`,
-        ipcConfigList,
-      );
+    if (!resourceName || !resourceNamespace) {
+      log.error('Resource name or namespace missing from event');
+      return;
     }
 
-    // For each IpcConfig resource, ensure a deployment exists in its namespace
-    if (ipcConfigList.body?.items) {
-      log.debug(
-        `Processing ${ipcConfigList.body.items.length} IpcConfig resources`
-      );
-      for (const item of ipcConfigList.body
-        .items as eevee.IpcConfig.ipcconfigResource[]) {
-        const namespace = item.metadata?.namespace;
-        const name = item.metadata?.name;
-        if (!namespace || !name) {
-          log.debug(
-            'Skipping IpcConfig resource with missing namespace or name'
-          );
-          continue;
-        }
-        log.debug(
-          `Processing IpcConfig resource ${name} in namespace ${namespace}`
-        );
+    log.debug(
+      `Processing IpcConfig resource ${resourceName} in namespace ${resourceNamespace}`
+    );
 
-        // Generate deployment name based on ipcconfig custom resource object name
-        const deploymentName = `eevee-${name}-nats`;
-        log.debug(
-          `Checking for deployment ${deploymentName} in namespace ${namespace}`
-        );
+    // Get the specific IpcConfig resource
+    const ipcConfigResponse = await customObjectsApi.getNamespacedCustomObject({
+      group: eevee.IpcConfig.details.group,
+      version: eevee.IpcConfig.details.version,
+      namespace: resourceNamespace,
+      plural: eevee.IpcConfig.details.plural,
+      name: resourceName,
+    });
 
-        // Check if deployment exists
-        try {
-          await appsV1Api.readNamespacedDeployment({
-            name: deploymentName,
-            namespace: namespace,
-          });
-          log.debug(
-            `Deployment ${deploymentName} already exists in namespace ${namespace}`
-          );
-        } catch {
-          // Deployment doesn't exist, create it
-          log.info(
-            `Creating deployment ${deploymentName} in namespace ${namespace}`
-          );
-          await createNatsDeployment(appsV1Api, namespace, name, item);
-        }
+    const item = ipcConfigResponse.body as eevee.IpcConfig.ipcconfigResource;
+    const namespace = item.metadata?.namespace;
+    const name = item.metadata?.name;
 
-        // Ensure the corresponding service exists or is updated
-        log.debug(
-          `Ensuring service exists for IpcConfig ${name} in namespace ${namespace}`
-        );
-        await createOrUpdateNatsService(coreV1Api, namespace, name);
-        log.debug(
-          `Service check completed for IpcConfig ${name} in namespace ${namespace}`
-        );
-      }
-      log.debug('Finished processing all IpcConfig resources');
+    if (!namespace || !name) {
+      log.debug('Skipping IpcConfig resource with missing namespace or name');
+      return;
     }
+
+    // Generate deployment name based on ipcconfig custom resource object name
+    const deploymentName = `eevee-${name}-nats`;
+    log.debug(
+      `Checking for deployment ${deploymentName} in namespace ${namespace}`
+    );
+
+    // Check if deployment exists
+    try {
+      await appsV1Api.readNamespacedDeployment({
+        name: deploymentName,
+        namespace: namespace,
+      });
+      log.debug(
+        `Deployment ${deploymentName} already exists in namespace ${namespace}`
+      );
+    } catch {
+      // Deployment doesn't exist, create it
+      log.info(
+        `Creating deployment ${deploymentName} in namespace ${namespace}`
+      );
+      await createNatsDeployment(appsV1Api, namespace, name, item);
+    }
+
+    // Ensure the corresponding service exists or is updated
+    log.debug(
+      `Ensuring service exists for IpcConfig ${name} in namespace ${namespace}`
+    );
+    await createOrUpdateNatsService(coreV1Api, namespace, name);
+    log.debug(
+      `Service check completed for IpcConfig ${name} in namespace ${namespace}`
+    );
     log.debug('IpcConfig reconciliation completed successfully');
   } catch (error) {
     log.error('Error during ipcconfig reconciliation:', error);
