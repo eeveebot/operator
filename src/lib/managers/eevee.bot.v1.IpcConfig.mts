@@ -259,7 +259,7 @@ async function createNatsDeployment(
   log.debug(`Generated deployment name: ${deploymentName}`);
 
   // Prepare command arguments for NATS server with auth
-  const commandArgs = ['--auth', '${NATS_TOKEN}'];
+  const commandArgs = ['--auth', '"$NATS_TOKEN"'];
 
   // Get the image from the IPC config spec if available
   let natsImage = 'docker.io/nats:latest';
