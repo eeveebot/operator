@@ -28,12 +28,7 @@ export const managedCrds: managedCrd[] = [
 ];
 
 async function handleResourceEvent(event: ResourceEvent): Promise<void> {
-  log.debug(
-    'Received Toolbox resource event:',
-    event.type,
-    event.meta.name,
-    event.meta.namespace
-  );
+  log.debug('Received Toolbox resource event:', event);
 
   // Handle specific event types differently
   switch (event.type) {
@@ -135,6 +130,14 @@ async function reconcileResource(
       plural: eevee.Toolbox.details.plural,
       name: resourceName,
     });
+
+    // Validate that the response contains a body
+    if (!toolboxResponse || !toolboxResponse.body) {
+      log.error(
+        `Failed to retrieve Toolbox resource ${resourceName} in namespace ${resourceNamespace}: Empty or invalid response`
+      );
+      return;
+    }
 
     const item = toolboxResponse.body as eevee.Toolbox.toolboxResource;
     const namespace = item.metadata?.namespace;

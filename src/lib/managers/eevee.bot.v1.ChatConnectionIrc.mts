@@ -28,12 +28,7 @@ export const managedCrds: managedCrd[] = [
 ];
 
 async function handleResourceEvent(event: ResourceEvent): Promise<void> {
-  log.debug(
-    'Received ChatConnectionIrc resource event:',
-    event.type,
-    event.meta.name,
-    event.meta.namespace
-  );
+  log.debug('Received ChatConnectionIrc resource event:', event);
 
   // Handle specific event types differently
   switch (event.type) {
@@ -144,6 +139,14 @@ async function reconcileResource(
         plural: eevee.ChatConnectionIrc.details.plural,
         name: resourceName,
       });
+
+    // Validate that the response contains a body
+    if (!chatConnectionIrcResponse || !chatConnectionIrcResponse.body) {
+      log.error(
+        `Failed to retrieve ChatConnectionIrc resource ${resourceName} in namespace ${resourceNamespace}: Empty or invalid response`
+      );
+      return;
+    }
 
     const item =
       chatConnectionIrcResponse.body as eevee.ChatConnectionIrc.chatconnectionircResource;
