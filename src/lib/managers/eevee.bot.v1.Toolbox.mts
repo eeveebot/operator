@@ -168,17 +168,11 @@ async function reconcileResource(
       log.info(
         `Creating deployment ${deploymentName} in namespace ${namespace}`
       );
-      // Pass the ipcConfig name if specified in the Toolbox spec
-      const ipcConfigName = item.spec?.ipcConfig;
-      log.debug(
-        `IPC config name from Toolbox spec: ${ipcConfigName || 'none'}`
-      );
       await createToolboxDeployment(
         appsV1Api,
         namespace,
         name,
-        item,
-        ipcConfigName
+        item
       );
     }
 
@@ -193,17 +187,27 @@ async function createToolboxDeployment(
   namespace: string,
   toolboxName: string,
   item: eevee.Toolbox.toolboxResource,
-  ipcConfigName?: string
 ): Promise<void> {
-  log.debug(
-    `Creating Toolbox deployment for ${toolboxName} in namespace ${namespace}`,
+  log.debug(`Creating Toolbox deployment for ${toolboxName} in namespace ${namespace}`);
+
+  // Prepare environment variables for the module
+  const containerEnvVars: K8s.V1EnvVar[] = [
     {
-      ipcConfigName: ipcConfigName,
-    }
-  );
+      name: 'NAMESPACE',
+      valueFrom: {
+        fieldRef: {
+          fieldPath: 'metadata.namespace',
+        },
+      },
+    },
+    {
+      name: 'RESOURCE_NAME',
+      value: 'toolbox',
+    },
+  ];
 
   // If ipcConfigName is provided, try to fetch the IPC config to get NATS settings
-  const containerEnvVars: K8s.V1EnvVar[] = [];
+  const ipcConfigName = item.spec?.ipcConfig;
   if (ipcConfigName && ipcConfigName.length > 0) {
     log.debug(`Fetching IPC config ${ipcConfigName} for NATS settings`);
     try {
@@ -216,7 +220,7 @@ async function createToolboxDeployment(
           plural: eevee.IpcConfig.details.plural,
           name: ipcConfigName,
         });
-
+ 
       // Define type for IPC config response
       interface IpcConfigResponse {
         spec?: {
@@ -232,14 +236,14 @@ async function createToolboxDeployment(
           };
         };
       }
-
+ 
       const ipcConfig = ipcConfigResponse as IpcConfigResponse;
       const natsTokenConfig = ipcConfig?.spec?.nats?.token;
-
+ 
       if (natsTokenConfig?.secretKeyRef) {
         const secretName = natsTokenConfig.secretKeyRef.secret.name;
         log.debug(`Found NATS token secret reference: ${secretName}`);
-
+ 
         // Add NATS_HOST from the same secret (assuming it's in a field called 'host')
         containerEnvVars.push({
           name: 'NATS_HOST',
@@ -250,7 +254,7 @@ async function createToolboxDeployment(
             },
           },
         });
-
+ 
         // Add NATS_TOKEN from the secret reference
         containerEnvVars.push({
           name: 'NATS_TOKEN',

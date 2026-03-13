@@ -183,7 +183,7 @@ async function createRouterDeployment(
   appsV1Api: K8s.AppsV1Api,
   namespace: string,
   routerName: string,
-  item: eevee.Router.routerResource
+  item: eevee.Router.routerResource,
 ): Promise<void> {
   log.debug(
     `Creating Router deployment for ${routerName} in namespace ${namespace}`
@@ -244,6 +244,77 @@ async function createRouterDeployment(
       value: routerName,
     },
   ];
+
+  // If ipcConfigName is provided, try to fetch the IPC config to get NATS settings
+  if (ipcConfigName && ipcConfigName.length > 0) {
+    log.debug(`Fetching IPC config ${ipcConfigName} for NATS settings`);
+    try {
+      const customObjectsApi = kc.makeApiClient(K8s.CustomObjectsApi);
+      const ipcConfigResponse =
+        await customObjectsApi.getNamespacedCustomObject({
+          group: eevee.IpcConfig.details.group,
+          version: eevee.IpcConfig.details.version,
+          namespace: namespace,
+          plural: eevee.IpcConfig.details.plural,
+          name: ipcConfigName,
+        });
+
+      // Define type for IPC config response
+      interface IpcConfigResponse {
+        spec?: {
+          nats?: {
+            token?: {
+              secretKeyRef?: {
+                secret: {
+                  name: string;
+                };
+                key: string;
+              };
+            };
+          };
+        };
+      }
+
+      const ipcConfig = ipcConfigResponse as IpcConfigResponse;
+      const natsTokenConfig = ipcConfig?.spec?.nats?.token;
+
+      if (natsTokenConfig?.secretKeyRef) {
+        const secretName = natsTokenConfig.secretKeyRef.secret.name;
+        log.debug(`Found NATS token secret reference: ${secretName}`);
+
+        // Add NATS_HOST from the same secret (assuming it's in a field called 'host')
+        containerEnvVars.push({
+          name: 'NATS_HOST',
+          valueFrom: {
+            secretKeyRef: {
+              name: secretName,
+              key: 'host',
+            },
+          },
+        });
+
+        // Add NATS_TOKEN from the secret reference
+        containerEnvVars.push({
+          name: 'NATS_TOKEN',
+          valueFrom: {
+            secretKeyRef: {
+              name: secretName,
+              key: 'token',
+            },
+          },
+        });
+      } else {
+        log.debug('No NATS token configuration found in IPC config');
+      }
+    } catch (error) {
+      log.warn(
+        `Failed to fetch IPC config ${ipcConfigName} for NATS settings:`,
+        error
+      );
+    }
+  } else {
+    log.debug('No IPC config name provided, skipping NATS configuration');
+  }
 
   // Prepare container ports
   const containerPorts: K8s.V1ContainerPort[] = [];
