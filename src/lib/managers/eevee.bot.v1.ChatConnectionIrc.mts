@@ -191,6 +191,165 @@ async function reconcileResource(
   }
 }
 
+/**
+ * Generates a YAML configuration from the connections spec, resolving any secret references
+ */
+async function generateConnectionsConfig(
+  connections: eevee.ChatConnectionIrc.IrcConnection[],
+  coreV1Api: K8s.CoreV1Api,
+  namespace: string
+): Promise<string> {
+  log.debug('Generating connections configuration from spec');
+
+  // Process each connection to handle secret references
+  const processedConnections = [];
+  for (const connection of connections) {
+    const processedConnection = { ...connection };
+
+    // Process postConnect actions that might have secret references
+    if (processedConnection.postConnect) {
+      for (const action of processedConnection.postConnect) {
+        if (
+          action.msg?.secretKeyRef?.secret?.name &&
+          action.msg?.secretKeyRef?.key
+        ) {
+          try {
+            const secretName = action.msg.secretKeyRef.secret.name;
+            const secretKey = action.msg.secretKeyRef.key;
+
+            // Fetch the secret
+            const secretResponse = await coreV1Api.readNamespacedSecret({
+              name: secretName,
+              namespace: namespace,
+            });
+            const secretData = secretResponse.data;
+
+            if (secretData && secretData[secretKey]) {
+              // Decode base64 encoded secret value
+              const decodedValue = Buffer.from(
+                secretData[secretKey],
+                'base64'
+              ).toString('utf-8');
+              // Replace the secretKeyRef with the actual value
+              action.msg.msg = decodedValue;
+              delete (action.msg as { secretKeyRef?: unknown }).secretKeyRef;
+            }
+          } catch (err) {
+            log.warn(
+              `Failed to process secret reference for message in connection ${connection.name}:`,
+              err
+            );
+          }
+        }
+
+        if (action.join) {
+          for (const channel of action.join) {
+            const chan = channel as {
+              secretKeyRef?: { secret: { name: string }; key: string };
+              key?: string;
+            };
+            if (chan.secretKeyRef?.secret?.name && chan.secretKeyRef?.key) {
+              try {
+                const secretName = chan.secretKeyRef.secret.name;
+                const secretKey = chan.secretKeyRef.key;
+
+                // Fetch the secret
+                const secretResponse = await coreV1Api.readNamespacedSecret({
+                  name: secretName,
+                  namespace: namespace,
+                });
+                const secretData = secretResponse.data;
+
+                if (secretData && secretData[secretKey]) {
+                  // Decode base64 encoded secret value
+                  const decodedValue = Buffer.from(
+                    secretData[secretKey],
+                    'base64'
+                  ).toString('utf-8');
+                  // Replace the secretKeyRef with the actual value
+                  chan.key = decodedValue;
+                  delete chan.secretKeyRef;
+                }
+              } catch (err) {
+                log.warn(
+                  `Failed to process secret reference for channel key in connection ${connection.name}:`,
+                  err
+                );
+              }
+            }
+          }
+        }
+      }
+    }
+
+    processedConnections.push(processedConnection);
+  }
+
+  // Convert to YAML format (simplified - in practice you might want to use a proper YAML library)
+  const configObject = {
+    connections: processedConnections,
+  };
+
+  // Simple JSON.stringify for now - in production you'd want proper YAML serialization
+  return JSON.stringify(configObject, null, 2);
+}
+
+/**
+ * Creates or updates a Kubernetes Secret containing the IRC connections configuration
+ */
+async function createConnectionsConfigSecret(
+  coreV1Api: K8s.CoreV1Api,
+  namespace: string,
+  ircConfigName: string,
+  connections: eevee.ChatConnectionIrc.IrcConnection[]
+): Promise<void> {
+  const secretName = `eevee-${ircConfigName}-irc-connections-config`;
+  const configContent = await generateConnectionsConfig(
+    connections,
+    coreV1Api,
+    namespace
+  );
+
+  const secret: K8s.V1Secret = {
+    metadata: {
+      name: secretName,
+      namespace: namespace,
+    },
+    type: 'Opaque',
+    data: {
+      'connections.yaml': Buffer.from(configContent).toString('base64'),
+    },
+  };
+
+  try {
+    // Try to update existing secret first
+    await coreV1Api.replaceNamespacedSecret({
+      name: secretName,
+      namespace: namespace,
+      body: secret,
+    });
+    log.debug(
+      `Updated existing secret ${secretName} in namespace ${namespace}`
+    );
+  } catch (err) {
+    log.debug('Secret update failed, attempting to create new secret:', err);
+    // If update fails, try to create new secret
+    try {
+      await coreV1Api.createNamespacedSecret({
+        namespace: namespace,
+        body: secret,
+      });
+      log.debug(`Created new secret ${secretName} in namespace ${namespace}`);
+    } catch (createErr) {
+      log.error(
+        `Failed to create/update secret ${secretName} in namespace ${namespace}:`,
+        createErr
+      );
+      throw createErr;
+    }
+  }
+}
+
 async function createIrcConnectorDeployment(
   appsV1Api: K8s.AppsV1Api,
   namespace: string,
@@ -233,6 +392,23 @@ async function createIrcConnectorDeployment(
     );
   }
 
+  // Create connections config secret if connections are specified
+  const connections = item.spec?.connections;
+  if (connections && connections.length > 0) {
+    try {
+      const coreV1Api = kc.makeApiClient(K8s.CoreV1Api);
+      await createConnectionsConfigSecret(
+        coreV1Api,
+        namespace,
+        ircConfigName,
+        connections
+      );
+    } catch (err) {
+      log.error(`Failed to create connections config secret:`, err);
+      // Continue with deployment creation even if secret creation fails
+    }
+  }
+
   // Prepare environment variables for the IRC connector
   const containerEnvVars: K8s.V1EnvVar[] = [
     {
@@ -248,6 +424,14 @@ async function createIrcConnectorDeployment(
       value: ircConfigName,
     },
   ];
+
+  // Add IRC connections config file environment variable if connections are specified
+  if (connections && connections.length > 0) {
+    containerEnvVars.push({
+      name: 'IRC_CONNECTIONS_CONFIG_FILE',
+      value: '/etc/irc-connections/connections.yaml',
+    });
+  }
 
   // If ipcConfigName is provided, try to fetch the IPC config to get NATS settings
   const ipcConfigName = item.spec?.ipcConfig;
@@ -346,6 +530,26 @@ async function createIrcConnectorDeployment(
   }
 
   log.debug('Creating deployment object');
+
+  // Prepare volume mounts for connections config if connections are specified
+  const volumes: K8s.V1Volume[] = [];
+  const volumeMounts: K8s.V1VolumeMount[] = [];
+
+  if (connections && connections.length > 0) {
+    volumes.push({
+      name: 'irc-connections-config',
+      secret: {
+        secretName: `eevee-${ircConfigName}-irc-connections-config`,
+      },
+    });
+
+    volumeMounts.push({
+      name: 'irc-connections-config',
+      mountPath: '/etc/irc-connections',
+      readOnly: true,
+    });
+  }
+
   const deployment: K8s.V1Deployment = {
     metadata: {
       name: deploymentName,
@@ -366,6 +570,7 @@ async function createIrcConnectorDeployment(
           },
         },
         spec: {
+          volumes: volumes,
           containers: [
             {
               name: 'irc-connector',
@@ -373,6 +578,7 @@ async function createIrcConnectorDeployment(
               imagePullPolicy: pullPolicy,
               env: containerEnvVars,
               ports: containerPorts,
+              volumeMounts: volumeMounts,
             },
           ],
         },
