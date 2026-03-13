@@ -478,14 +478,14 @@ async function createModuleDeployment(
       replicas: size,
       selector: {
         matchLabels: {
-          'eevee.bot/module': 'true',
+          'eevee.bot/module': moduleName,
         },
       },
       template: {
         metadata: {
           labels: {
             app: 'eevee.bot',
-            'eevee.bot/module': 'true',
+            'eevee.bot/module': moduleName,
           },
         },
         spec: {
