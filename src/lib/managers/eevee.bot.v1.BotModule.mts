@@ -395,8 +395,10 @@ async function createModuleDeployment(
   }
 
   // Handle moduleConfig if provided
-  if (item.spec?.moduleConfig) {
+  const moduleConfig = item.spec?.moduleConfig;
+  if (moduleConfig) {
     try {
+      const coreV1Api = kc.makeApiClient(K8s.CoreV1Api);
       const configMapName = `${deploymentName}-config`;
       const configMap: K8s.V1ConfigMap = {
         metadata: {
@@ -404,7 +406,7 @@ async function createModuleDeployment(
           namespace: namespace,
         },
         data: {
-          'config.json': JSON.stringify(item.spec.moduleConfig),
+          'config.yaml': JSON.stringify(moduleConfig, null, 2),
         },
       };
 
@@ -420,7 +422,7 @@ async function createModuleDeployment(
         log.warn(`Failed to create ConfigMap ${configMapName}:`, error);
       }
 
-      // Mount the config map
+      // Add volume for config map
       volumes.push({
         name: 'module-config',
         configMap: {
@@ -428,6 +430,7 @@ async function createModuleDeployment(
         },
       });
 
+      // Add volume mount for config map
       volumeMounts.push({
         name: 'module-config',
         mountPath: '/etc/module-config',
@@ -436,7 +439,7 @@ async function createModuleDeployment(
       // Add environment variable pointing to config
       containerEnvVars.push({
         name: 'MODULE_CONFIG_PATH',
-        value: '/etc/module-config/config.json',
+        value: '/etc/module-config/config.yaml',
       });
     } catch (error) {
       log.warn('Failed to process moduleConfig:', error);
