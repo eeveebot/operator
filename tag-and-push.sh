@@ -37,23 +37,23 @@ else
 fi
 
 # Check if tag already exists
-if git rev-parse "${VERSION}-build" >/dev/null 2>&1; then
-  echo "Tag ${VERSION}-build already exists."
+if git rev-parse "${VERSION}" >/dev/null 2>&1; then
+  echo "Tag ${VERSION} already exists."
   exit 1
 fi
 
 # Create new tag
-git tag "${VERSION}-build" || { echo "Failed to create tag"; exit 1; }
+git tag "${VERSION}" || { echo "Failed to create tag"; exit 1; }
 
 # Push with error handling
 if ! git push; then
   echo "Failed to push commits"
-  git tag -d "${VERSION}-build"
+  git tag -d "${VERSION}"
   exit 1
 fi
 
 if ! git push --tags; then
   echo "Failed to push tags"
-  git tag -d "${VERSION}-build"
+  git tag -d "${VERSION}"
   exit 1
 fi
