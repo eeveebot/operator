@@ -30,11 +30,16 @@ export const managedCrds: managedCrd[] = [
 async function handleResourceEvent(event: ResourceEvent): Promise<void> {
   log.debug('Received BotModule resource event:', event);
 
+  // Extract module name for logging
+  const moduleName =
+    (event.object as eevee.BotModule.botmoduleResource)?.spec?.moduleName ||
+    event.meta.name;
+
   // Handle specific event types differently
   switch (event.type) {
     case ResourceEventType.Added:
       log.info(
-        `BotModule resource added: ${event.meta.name} in namespace ${event.meta.namespace || 'unknown'}`
+        `BotModule "${moduleName}" resource added: ${event.meta.name} in namespace ${event.meta.namespace || 'unknown'}`
       );
       log.debug('Triggering reconciliation for added BotModule resource');
       // The reconciler will ensure the deployment exists
@@ -47,7 +52,7 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
       break;
     case ResourceEventType.Modified:
       log.info(
-        `BotModule resource modified: ${event.meta.name} in namespace ${event.meta.namespace || 'unknown'}`
+        `BotModule "${moduleName}" resource modified: ${event.meta.name} in namespace ${event.meta.namespace || 'unknown'}`
       );
       log.debug('Triggering reconciliation for modified BotModule resource');
       // The reconciler will ensure the deployment is in the correct state
@@ -60,7 +65,7 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
       break;
     case ResourceEventType.Deleted:
       log.info(
-        `BotModule resource deleted: ${event.meta.name} in namespace ${event.meta.namespace || 'unknown'}`
+        `BotModule "${moduleName}" resource deleted: ${event.meta.name} in namespace ${event.meta.namespace || 'unknown'}`
       );
       log.debug('Processing deletion of BotModule resource');
       // Delete the associated deployment when BotModule resource is deleted
@@ -99,7 +104,13 @@ async function reconcileResource(
   kc: K8s.KubeConfig,
   event: ResourceEvent
 ): Promise<void> {
-  log.debug('Starting botmodule reconciliation for specific resource');
+  // Extract module name for logging
+  const moduleName =
+    (event.object as eevee.BotModule.botmoduleResource)?.spec?.moduleName ||
+    event.meta.name;
+  log.debug(
+    `Starting botmodule "${moduleName}" reconciliation for specific resource`
+  );
   if (!kc) {
     log.error('KubeConfig not provided to botmodule reconciler');
     return;
@@ -120,7 +131,7 @@ async function reconcileResource(
     }
 
     log.debug(
-      `Processing BotModule resource ${resourceName} in namespace ${resourceNamespace}`
+      `Processing BotModule "${moduleName}" resource ${resourceName} in namespace ${resourceNamespace}`
     );
 
     // Get the specific BotModule resource
@@ -189,7 +200,7 @@ async function createModuleDeployment(
   item: eevee.BotModule.botmoduleResource
 ): Promise<void> {
   log.debug(
-    `Creating module deployment for ${moduleName} in namespace ${namespace}`
+    `Creating module deployment for "${moduleName}" in namespace ${namespace}`
   );
 
   // Generate deployment name based on botmodule name
@@ -228,7 +239,10 @@ async function createModuleDeployment(
       log.debug(`Volume mount path: ${volumeMountPath}`);
     }
   } catch (error) {
-    log.warn(`Failed to process BotModule ${moduleName} for settings:`, error);
+    log.warn(
+      `Failed to process BotModule "${moduleName}" for settings:`,
+      error
+    );
   }
 
   // Prepare environment variables for the module
@@ -493,7 +507,7 @@ async function updateModuleDeployment(
   item: eevee.BotModule.botmoduleResource
 ): Promise<void> {
   log.debug(
-    `Updating module deployment for ${moduleName} in namespace ${namespace}`
+    `Updating module deployment for "${moduleName}" in namespace ${namespace}`
   );
 
   // Generate deployment name based on botmodule name
@@ -531,7 +545,10 @@ async function updateModuleDeployment(
       log.debug(`Volume mount path: ${volumeMountPath}`);
     }
   } catch (error) {
-    log.warn(`Failed to process BotModule ${moduleName} for settings:`, error);
+    log.warn(
+      `Failed to process BotModule "${moduleName}" for settings:`,
+      error
+    );
   }
 
   try {
