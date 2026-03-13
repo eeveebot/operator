@@ -62,9 +62,6 @@ if (!(await checkCRDs())) {
 // Setup resource watchers so we know when CR objects change
 await setupResourceWatchers();
 
-// Run initial reconciliation for all resource types
-await runInitialReconciliation();
-
 /**
  * Cleanup before exit
  * Forces exit after 5 seconds if cleanup fails
@@ -116,28 +113,4 @@ async function setupResourceWatchers() {
       WATCH_OTHER_NAMESPACES ? undefined : NAMESPACE
     );
   });
-}
-
-/**
- * Run initial reconciliation for all resource types
- */
-async function runInitialReconciliation() {
-  log.info('running initial reconciliation for all resource types');
-  log.debug(`Processing ${managedCrds.length} managed CRDs`);
-  for (const crd of managedCrds) {
-    log.debug(`Processing CRD: ${crd.plural}`);
-    if (crd.reconciler) {
-      try {
-        log.debug(`Starting reconciliation for ${crd.plural}`);
-        await crd.reconciler(kc);
-        log.info(`reconciliation completed for ${crd.plural}`);
-        log.debug(`Reconciliation finished for ${crd.plural}`);
-      } catch (error) {
-        log.error(`reconciliation failed for ${crd.plural}:`, error);
-      }
-    } else {
-      log.debug(`No reconciler found for ${crd.plural}`);
-    }
-  }
-  log.info('initial reconciliation for all resource types completed');
 }

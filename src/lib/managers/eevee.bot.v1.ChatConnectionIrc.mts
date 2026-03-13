@@ -155,7 +155,8 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
         }
       );
       log.debug(
-        `Successfully listed ChatConnectionIrc resources in namespace ${NAMESPACE}`
+        `Successfully listed ChatConnectionIrc resources in namespace ${NAMESPACE}`,
+        chatConnectionIrcList,
       );
     }
 

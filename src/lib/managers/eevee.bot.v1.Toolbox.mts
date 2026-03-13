@@ -138,7 +138,8 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
         plural: eevee.Toolbox.details.plural,
       });
       log.debug(
-        `Successfully listed Toolbox resources in namespace ${NAMESPACE}`
+        `Successfully listed Toolbox resources in namespace ${NAMESPACE}`,
+        toolboxList,
       );
     }
 

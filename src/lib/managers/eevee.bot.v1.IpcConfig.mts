@@ -143,7 +143,8 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
         plural: eevee.IpcConfig.details.plural,
       });
       log.debug(
-        `Successfully listed IpcConfig resources in namespace ${NAMESPACE}`
+        `Successfully listed IpcConfig resources in namespace ${NAMESPACE}`,
+        ipcConfigList,
       );
     }
 
