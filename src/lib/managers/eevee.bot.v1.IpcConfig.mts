@@ -366,10 +366,10 @@ async function createNatsDeployment(
 
 /**
  * Generates a random token for NATS authentication
- * @returns A random 32-character hexadecimal string
+ * @returns A random 16-character hexadecimal string
  */
 function generateRandomToken(): string {
-  return Array.from({ length: 32 }, () =>
+  return Array.from({ length: 16 }, () =>
     Math.floor(Math.random() * 16).toString(16)
   ).join('');
 }
