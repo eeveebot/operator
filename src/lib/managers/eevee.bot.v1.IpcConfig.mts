@@ -397,11 +397,9 @@ async function createNatsTokenSecret(
       namespace: namespace,
     },
     type: 'Opaque',
-    data: {
-      token: Buffer.from(token).toString('base64'),
-      host: Buffer.from(
-        `eevee-${ipcConfigName}-nats.${namespace}.svc.cluster.local`
-      ).toString('base64'),
+    stringData: {
+      token: `${token}`,
+      host: `eevee-${ipcConfigName}-nats.${namespace}.svc.cluster.local`,
     },
   };
 
