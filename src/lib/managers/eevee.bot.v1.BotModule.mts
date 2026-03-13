@@ -3,6 +3,7 @@
 import { eevee } from '@eeveebot/crds';
 import { ResourceEvent, ResourceEventType } from '@thehonker/k8s-operator';
 import * as K8s from '@kubernetes/client-node';
+import { dump as yamlDump } from 'js-yaml';
 
 import { log } from '../../lib/logging.mjs';
 import { managedCrd } from '../../lib/managers/types.mjs';
@@ -406,7 +407,7 @@ async function createModuleDeployment(
           namespace: namespace,
         },
         data: {
-          'config.yaml': JSON.stringify(moduleConfig, null, 2),
+          'config.yaml': yamlDump(moduleConfig, { indent: 2 }),
         },
       };
 
@@ -418,8 +419,30 @@ async function createModuleDeployment(
         log.info(
           `Created ConfigMap ${configMapName} in namespace ${namespace}`
         );
-      } catch (error) {
-        log.warn(`Failed to create ConfigMap ${configMapName}:`, error);
+      } catch (error: unknown) {
+        if (
+          (error as { response?: { statusCode?: number } }).response
+            ?.statusCode === 409
+        ) {
+          // ConfigMap already exists, update it
+          try {
+            await coreV1Api.replaceNamespacedConfigMap({
+              name: configMapName,
+              namespace: namespace,
+              body: configMap,
+            });
+            log.info(
+              `Updated ConfigMap ${configMapName} in namespace ${namespace}`
+            );
+          } catch (updateError) {
+            log.warn(
+              `Failed to update ConfigMap ${configMapName}:`,
+              updateError
+            );
+          }
+        } else {
+          log.warn(`Failed to create ConfigMap ${configMapName}:`, error);
+        }
       }
 
       // Add volume for config map
@@ -614,5 +637,79 @@ async function updateModuleDeployment(
     }
   } catch (error) {
     log.error(`Failed to update deployment ${deploymentName}:`, error);
+  }
+
+  // Handle moduleConfig updates if provided
+  const moduleConfig = item.spec?.moduleConfig;
+  try {
+    const coreV1Api = kc.makeApiClient(K8s.CoreV1Api);
+    const configMapName = `${deploymentName}-config`;
+
+    if (moduleConfig) {
+      // Update or create the ConfigMap with the new configuration
+      const configMap: K8s.V1ConfigMap = {
+        metadata: {
+          name: configMapName,
+          namespace: namespace,
+        },
+        data: {
+          'config.yaml': yamlDump(moduleConfig, { indent: 2 }),
+        },
+      };
+
+      try {
+        await coreV1Api.replaceNamespacedConfigMap({
+          name: configMapName,
+          namespace: namespace,
+          body: configMap,
+        });
+        log.info(
+          `Updated ConfigMap ${configMapName} in namespace ${namespace}`
+        );
+      } catch (error: unknown) {
+        if (
+          (error as { response?: { statusCode?: number } }).response
+            ?.statusCode === 404
+        ) {
+          // ConfigMap doesn't exist, create it
+          try {
+            await coreV1Api.createNamespacedConfigMap({
+              namespace: namespace,
+              body: configMap,
+            });
+            log.info(
+              `Created ConfigMap ${configMapName} in namespace ${namespace}`
+            );
+          } catch (createError) {
+            log.warn(
+              `Failed to create ConfigMap ${configMapName}:`,
+              createError
+            );
+          }
+        } else {
+          log.warn(`Failed to update ConfigMap ${configMapName}:`, error);
+        }
+      }
+    } else {
+      // If moduleConfig is not provided, delete the ConfigMap if it exists
+      try {
+        await coreV1Api.deleteNamespacedConfigMap({
+          name: configMapName,
+          namespace: namespace,
+        });
+        log.info(
+          `Deleted ConfigMap ${configMapName} in namespace ${namespace}`
+        );
+      } catch (error: unknown) {
+        if (
+          (error as { response?: { statusCode?: number } }).response
+            ?.statusCode !== 404
+        ) {
+          log.warn(`Failed to delete ConfigMap ${configMapName}:`, error);
+        }
+      }
+    }
+  } catch (error) {
+    log.warn('Failed to process moduleConfig update:', error);
   }
 }
