@@ -123,14 +123,21 @@ async function setupResourceWatchers() {
  */
 async function runInitialReconciliation() {
   log.info('running initial reconciliation for all resource types');
+  log.debug(`Processing ${managedCrds.length} managed CRDs`);
   for (const crd of managedCrds) {
+    log.debug(`Processing CRD: ${crd.plural}`);
     if (crd.reconciler) {
       try {
+        log.debug(`Starting reconciliation for ${crd.plural}`);
         await crd.reconciler(kc);
         log.info(`reconciliation completed for ${crd.plural}`);
+        log.debug(`Reconciliation finished for ${crd.plural}`);
       } catch (error) {
         log.error(`reconciliation failed for ${crd.plural}:`, error);
       }
+    } else {
+      log.debug(`No reconciler found for ${crd.plural}`);
     }
   }
+  log.info('initial reconciliation for all resource types completed');
 }

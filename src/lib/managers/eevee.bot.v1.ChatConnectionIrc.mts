@@ -41,9 +41,15 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
       log.info(
         `ChatConnectionIrc resource added: ${event.meta.name} in namespace ${event.meta.namespace || 'unknown'}`
       );
+      log.debug(
+        'Triggering reconciliation for added ChatConnectionIrc resource'
+      );
       // The reconciler will ensure the deployment exists
       try {
         await reconcileResource(kc);
+        log.debug(
+          'Reconciliation completed for added ChatConnectionIrc resource'
+        );
       } catch (error) {
         log.error('Error during reconciliation:', error);
       }
@@ -52,9 +58,15 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
       log.info(
         `ChatConnectionIrc resource modified: ${event.meta.name} in namespace ${event.meta.namespace || 'unknown'}`
       );
+      log.debug(
+        'Triggering reconciliation for modified ChatConnectionIrc resource'
+      );
       // The reconciler will ensure the deployment is in the correct state
       try {
         await reconcileResource(kc);
+        log.debug(
+          'Reconciliation completed for modified ChatConnectionIrc resource'
+        );
       } catch (error) {
         log.error('Error during reconciliation:', error);
       }
@@ -63,16 +75,21 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
       log.info(
         `ChatConnectionIrc resource deleted: ${event.meta.name} in namespace ${event.meta.namespace || 'unknown'}`
       );
+      log.debug('Processing deletion of ChatConnectionIrc resource');
       // Delete the associated deployment when ChatConnectionIrc resource is deleted
       if (event.meta.namespace) {
         try {
           const appsV1Api = kc.makeApiClient(K8s.AppsV1Api);
+          const deploymentName = `eevee-${event.meta.name}-irc-connector`;
+          log.debug(
+            `Attempting to delete deployment ${deploymentName} in namespace ${event.meta.namespace}`
+          );
           await appsV1Api.deleteNamespacedDeployment({
-            name: `eevee-${event.meta.name}-irc-connector`,
+            name: deploymentName,
             namespace: event.meta.namespace,
           });
           log.info(
-            `Deleted deployment eevee-${event.meta.name}-irc-connector in namespace ${event.meta.namespace}`
+            `Deleted deployment ${deploymentName} in namespace ${event.meta.namespace}`
           );
         } catch (error) {
           log.error(
@@ -85,12 +102,14 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
           `Cannot delete deployment for ChatConnectionIrc ${event.meta.name} - no namespace specified`
         );
       }
+      log.debug('Completed processing of ChatConnectionIrc resource deletion');
       // No reconciliation needed for deletions
       break;
   }
 }
 
 async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
+  log.debug('Starting chatconnectionirc reconciliation');
   if (!kc) {
     log.error('KubeConfig not provided to chatconnectionirc reconciler');
     return;
@@ -100,6 +119,7 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
   const customObjectsApi = kc.makeApiClient(K8s.CustomObjectsApi);
 
   try {
+    log.debug('Listing all ChatConnectionIrc custom resources');
     // List all ChatConnectionIrc custom resources
     const chatConnectionIrcList =
       await customObjectsApi.listCustomObjectForAllNamespaces({
@@ -107,16 +127,31 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
         version: eevee.ChatConnectionIrc.details.version,
         plural: eevee.ChatConnectionIrc.details.plural,
       });
+    log.debug('Successfully listed ChatConnectionIrc resources');
 
     // For each ChatConnectionIrc resource, ensure a deployment exists in its namespace
     if (chatConnectionIrcList.body?.items) {
+      log.debug(
+        `Processing ${chatConnectionIrcList.body.items.length} ChatConnectionIrc resources`
+      );
       for (const item of chatConnectionIrcList.body.items) {
         const namespace = item.metadata?.namespace;
         const name = item.metadata?.name;
-        if (!namespace || !name) continue;
+        if (!namespace || !name) {
+          log.debug(
+            'Skipping ChatConnectionIrc resource with missing namespace or name'
+          );
+          continue;
+        }
+        log.debug(
+          `Processing ChatConnectionIrc resource ${name} in namespace ${namespace}`
+        );
 
         // Generate deployment name based on chatconnectionirc custom resource object name
         const deploymentName = `eevee-${name}-irc-connector`;
+        log.debug(
+          `Checking for deployment ${deploymentName} in namespace ${namespace}`
+        );
 
         // Check if deployment exists
         try {
@@ -138,7 +173,9 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
         // No service needed for IRC connector
         log.debug('No service required for IRC connector');
       }
+      log.debug('Finished processing all ChatConnectionIrc resources');
     }
+    log.debug('ChatConnectionIrc reconciliation completed successfully');
   } catch (error) {
     log.error('Error during chatconnectionirc reconciliation:', error);
   }
@@ -150,8 +187,13 @@ async function createIrcConnectorDeployment(
   ircConfigName: string,
   item: eevee.ChatConnectionIrc.chatconnectionircResource
 ): Promise<void> {
+  log.debug(
+    `Creating IRC connector deployment for ${ircConfigName} in namespace ${namespace}`
+  );
+
   // Generate deployment name based on chatconnectionirc name
   const deploymentName = `eevee-${ircConfigName}-irc-connector`;
+  log.debug(`Generated deployment name: ${deploymentName}`);
 
   // Get the image from the ChatConnectionIrc spec if available
   let ircImage = 'ghcr.io/eeveebot/connector-irc:latest';
@@ -159,16 +201,20 @@ async function createIrcConnectorDeployment(
   let metricsPort = 8080;
   const pullPolicy: K8s.V1Container['imagePullPolicy'] = 'Always';
 
+  log.debug('Processing ChatConnectionIrc spec for configuration');
   try {
     const ircConfig = item as eevee.ChatConnectionIrc.chatconnectionircResource;
     if (ircConfig?.spec?.image) {
       ircImage = ircConfig.spec.image;
+      log.debug(`Using custom image: ${ircImage}`);
     }
     if (ircConfig?.spec?.metrics !== undefined) {
       metricsEnabled = ircConfig.spec.metrics;
+      log.debug(`Metrics enabled: ${metricsEnabled}`);
     }
     if (ircConfig?.spec?.metricsPort) {
       metricsPort = ircConfig.spec.metricsPort;
+      log.debug(`Metrics port: ${metricsPort}`);
     }
   } catch (error) {
     log.warn(
@@ -198,6 +244,7 @@ async function createIrcConnectorDeployment(
 
   // Add metrics port if metrics are enabled
   if (metricsEnabled) {
+    log.debug('Adding metrics port to container configuration');
     containerPorts.push({
       name: 'metrics',
       containerPort: metricsPort,
@@ -216,6 +263,7 @@ async function createIrcConnectorDeployment(
     });
   }
 
+  log.debug('Creating deployment object');
   const deployment: K8s.V1Deployment = {
     metadata: {
       name: deploymentName,
@@ -250,6 +298,9 @@ async function createIrcConnectorDeployment(
     },
   };
 
+  log.debug(
+    `Attempting to create IRC connector deployment ${deploymentName} in namespace ${namespace}`
+  );
   try {
     await appsV1Api.createNamespacedDeployment({
       namespace: namespace,
@@ -258,6 +309,9 @@ async function createIrcConnectorDeployment(
     log.info(
       `Successfully created IRC connector deployment ${deploymentName} in namespace ${namespace}` +
         `${metricsEnabled ? ` with metrics enabled on port ${metricsPort}` : ''}`
+    );
+    log.debug(
+      `IRC connector deployment creation completed for ${deploymentName}`
     );
   } catch (error) {
     log.error(

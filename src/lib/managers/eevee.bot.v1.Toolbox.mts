@@ -41,9 +41,11 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
       log.info(
         `Toolbox resource added: ${event.meta.name} in namespace ${event.meta.namespace || 'unknown'}`
       );
+      log.debug('Triggering reconciliation for added Toolbox resource');
       // The reconciler will ensure the deployment exists
       try {
         await reconcileResource(kc);
+        log.debug('Reconciliation completed for added Toolbox resource');
       } catch (error) {
         log.error('Error during reconciliation:', error);
       }
@@ -52,9 +54,11 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
       log.info(
         `Toolbox resource modified: ${event.meta.name} in namespace ${event.meta.namespace || 'unknown'}`
       );
+      log.debug('Triggering reconciliation for modified Toolbox resource');
       // The reconciler will ensure the deployment is in the correct state
       try {
         await reconcileResource(kc);
+        log.debug('Reconciliation completed for modified Toolbox resource');
       } catch (error) {
         log.error('Error during reconciliation:', error);
       }
@@ -63,16 +67,21 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
       log.info(
         `Toolbox resource deleted: ${event.meta.name} in namespace ${event.meta.namespace || 'unknown'}`
       );
+      log.debug('Processing deletion of Toolbox resource');
       // Delete the associated deployment when Toolbox resource is deleted
       if (event.meta.namespace) {
         try {
           const appsV1Api = kc.makeApiClient(K8s.AppsV1Api);
+          const deploymentName = `eevee-${event.meta.name}-toolbox`;
+          log.debug(
+            `Attempting to delete deployment ${deploymentName} in namespace ${event.meta.namespace}`
+          );
           await appsV1Api.deleteNamespacedDeployment({
-            name: `eevee-${event.meta.name}-toolbox`,
+            name: deploymentName,
             namespace: event.meta.namespace,
           });
           log.info(
-            `Deleted deployment eevee-${event.meta.name}-toolbox in namespace ${event.meta.namespace}`
+            `Deleted deployment ${deploymentName} in namespace ${event.meta.namespace}`
           );
         } catch (error) {
           log.error(
@@ -85,12 +94,14 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
           `Cannot delete deployment for Toolbox ${event.meta.name} - no namespace specified`
         );
       }
+      log.debug('Completed processing of Toolbox resource deletion');
       // No reconciliation needed for deletions
       break;
   }
 }
 
 async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
+  log.debug('Starting toolbox reconciliation');
   if (!kc) {
     log.error('KubeConfig not provided to toolbox reconciler');
     return;
@@ -100,6 +111,7 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
   const customObjectsApi = kc.makeApiClient(K8s.CustomObjectsApi);
 
   try {
+    log.debug('Listing all Toolbox custom resources');
     // List all Toolbox custom resources
     const toolboxList = await customObjectsApi.listCustomObjectForAllNamespaces(
       {
@@ -108,16 +120,29 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
         plural: eevee.Toolbox.details.plural,
       }
     );
+    log.debug('Successfully listed Toolbox resources');
 
     // For each Toolbox resource, ensure a deployment exists in its namespace
     if (toolboxList.body?.items) {
+      log.debug(
+        `Processing ${toolboxList.body.items.length} Toolbox resources`
+      );
       for (const item of toolboxList.body.items) {
         const namespace = item.metadata?.namespace;
         const name = item.metadata?.name;
-        if (!namespace || !name) continue;
+        if (!namespace || !name) {
+          log.debug('Skipping Toolbox resource with missing namespace or name');
+          continue;
+        }
+        log.debug(
+          `Processing Toolbox resource ${name} in namespace ${namespace}`
+        );
 
         // Generate deployment name based on toolbox custom resource object name
         const deploymentName = `eevee-${name}-toolbox`;
+        log.debug(
+          `Checking for deployment ${deploymentName} in namespace ${namespace}`
+        );
 
         // Check if deployment exists
         try {
@@ -135,6 +160,9 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
           );
           // Pass the ipcConfig name if specified in the Toolbox spec
           const ipcConfigName = item.spec?.ipcConfig;
+          log.debug(
+            `IPC config name from Toolbox spec: ${ipcConfigName || 'none'}`
+          );
           await createToolboxDeployment(
             appsV1Api,
             namespace,
@@ -144,7 +172,9 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
           );
         }
       }
+      log.debug('Finished processing all Toolbox resources');
     }
+    log.debug('Toolbox reconciliation completed successfully');
   } catch (error) {
     log.error('Error during toolbox reconciliation:', error);
   }
@@ -157,9 +187,17 @@ async function createToolboxDeployment(
   item: eevee.Toolbox.toolboxResource,
   ipcConfigName?: string
 ): Promise<void> {
+  log.debug(
+    `Creating Toolbox deployment for ${toolboxName} in namespace ${namespace}`,
+    {
+      ipcConfigName: ipcConfigName || 'none',
+    }
+  );
+
   // If ipcConfigName is provided, try to fetch the IPC config to get NATS settings
   const containerEnvVars: K8s.V1EnvVar[] = [];
   if (ipcConfigName) {
+    log.debug(`Fetching IPC config ${ipcConfigName} for NATS settings`);
     try {
       const customObjectsApi = kc.makeApiClient(K8s.CustomObjectsApi);
       const ipcConfigResponse =
@@ -192,6 +230,7 @@ async function createToolboxDeployment(
 
       if (natsTokenConfig?.secretKeyRef) {
         const secretName = natsTokenConfig.secretKeyRef.secret.name;
+        log.debug(`Found NATS token secret reference: ${secretName}`);
 
         // Add NATS_HOST from the same secret (assuming it's in a field called 'host')
         containerEnvVars.push({
@@ -214,6 +253,8 @@ async function createToolboxDeployment(
             },
           },
         });
+      } else {
+        log.debug('No NATS token configuration found in IPC config');
       }
     } catch (error) {
       log.warn(
@@ -221,10 +262,13 @@ async function createToolboxDeployment(
         error
       );
     }
+  } else {
+    log.debug('No IPC config name provided, skipping NATS configuration');
   }
 
   // Generate deployment name based on toolbox name
   const deploymentName = `eevee-${toolboxName}-toolbox`;
+  log.debug(`Generated deployment name: ${deploymentName}`);
 
   // Get the image from the Toolbox spec if available
   let toolboxImage = 'ghcr.io/eeveebot/cli:latest';
@@ -232,20 +276,25 @@ async function createToolboxDeployment(
   let metricsPort = 8080;
   let pullPolicy: K8s.V1Container['imagePullPolicy'] = 'Always';
 
+  log.debug('Processing Toolbox spec for configuration');
   try {
     const toolbox = item as eevee.Toolbox.toolboxResource;
     if (toolbox?.spec?.image) {
       toolboxImage = toolbox.spec.image;
+      log.debug(`Using custom image: ${toolboxImage}`);
     }
     if (toolbox?.spec?.metrics !== undefined) {
       metricsEnabled = toolbox.spec.metrics;
+      log.debug(`Metrics enabled: ${metricsEnabled}`);
     }
     if (toolbox?.spec?.metricsPort) {
       metricsPort = toolbox.spec.metricsPort;
+      log.debug(`Metrics port: ${metricsPort}`);
     }
     if (toolbox?.spec?.pullPolicy) {
       pullPolicy = toolbox.spec
         .pullPolicy as K8s.V1Container['imagePullPolicy'];
+      log.debug(`Image pull policy: ${pullPolicy}`);
     }
   } catch (error) {
     log.warn(`Failed to process Toolbox ${toolboxName} for settings:`, error);
@@ -256,6 +305,7 @@ async function createToolboxDeployment(
 
   // Add metrics port if metrics are enabled
   if (metricsEnabled) {
+    log.debug('Adding metrics port to container configuration');
     containerPorts.push({
       name: 'metrics',
       containerPort: metricsPort,
@@ -274,6 +324,7 @@ async function createToolboxDeployment(
     });
   }
 
+  log.debug('Creating deployment object');
   const deployment: K8s.V1Deployment = {
     metadata: {
       name: deploymentName,
@@ -313,6 +364,9 @@ async function createToolboxDeployment(
     },
   };
 
+  log.debug(
+    `Attempting to create deployment ${deploymentName} in namespace ${namespace}`
+  );
   try {
     await appsV1Api.createNamespacedDeployment({
       namespace: namespace,
@@ -322,6 +376,7 @@ async function createToolboxDeployment(
       `Successfully created deployment ${deploymentName} in namespace ${namespace}` +
         `${metricsEnabled ? ` with metrics enabled on port ${metricsPort}` : ''}`
     );
+    log.debug(`Deployment creation completed for ${deploymentName}`);
   } catch (error) {
     log.error(`Failed to create deployment in namespace ${namespace}:`, error);
   }
