@@ -17,12 +17,10 @@ import { managedCrd } from './lib/managers/types.mjs';
 import { parseBool } from './lib/functions.mjs';
 
 import { managedCrds as IpcConfig } from './lib/managers/eevee.bot.v1.IpcConfig.mjs';
-import { managedCrds as Toolbox } from './lib/managers/eevee.bot.v1.Toolbox.mjs';
 import { managedCrds as BotModule } from './lib/managers/eevee.bot.v1.BotModule.mjs';
 
 const managedCrds: managedCrd[] = [];
 managedCrds.push(...IpcConfig);
-managedCrds.push(...Toolbox);
 managedCrds.push(...BotModule);
 
 // Get some runtime config from envvars
