@@ -17,6 +17,12 @@ if (KUBE_IN_CLUSTER_CONFIG) {
   kc.loadFromDefault();
 }
 
+// Get namespace configuration
+const NAMESPACE = process.env.NAMESPACE || 'eevee-bot';
+const WATCH_OTHER_NAMESPACES_ENV =
+  process.env.WATCH_OTHER_NAMESPACES || 'false';
+const WATCH_OTHER_NAMESPACES = parseBool(WATCH_OTHER_NAMESPACES_ENV);
+
 export const managedCrds: managedCrd[] = [
   {
     group: eevee.Toolbox.details.group,
@@ -111,16 +117,30 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
   const customObjectsApi = kc.makeApiClient(K8s.CustomObjectsApi);
 
   try {
-    log.debug('Listing all Toolbox custom resources');
-    // List all Toolbox custom resources
-    const toolboxList = await customObjectsApi.listCustomObjectForAllNamespaces(
-      {
+    let toolboxList: { body?: { items?: eevee.Toolbox.toolboxResource[] } };
+
+    if (WATCH_OTHER_NAMESPACES) {
+      log.debug('Listing all Toolbox custom resources');
+      // List all Toolbox custom resources
+      toolboxList = await customObjectsApi.listCustomObjectForAllNamespaces({
         group: eevee.Toolbox.details.group,
         version: eevee.Toolbox.details.version,
         plural: eevee.Toolbox.details.plural,
-      }
-    );
-    log.debug('Successfully listed Toolbox resources');
+      });
+      log.debug('Successfully listed Toolbox resources across all namespaces');
+    } else {
+      log.debug(`Listing Toolbox custom resources in namespace ${NAMESPACE}`);
+      // List Toolbox custom resources only in the specified namespace
+      toolboxList = await customObjectsApi.listNamespacedCustomObject({
+        group: eevee.Toolbox.details.group,
+        version: eevee.Toolbox.details.version,
+        namespace: NAMESPACE,
+        plural: eevee.Toolbox.details.plural,
+      });
+      log.debug(
+        `Successfully listed Toolbox resources in namespace ${NAMESPACE}`
+      );
+    }
 
     // For each Toolbox resource, ensure a deployment exists in its namespace
     if (toolboxList.body?.items) {

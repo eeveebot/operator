@@ -17,6 +17,12 @@ if (KUBE_IN_CLUSTER_CONFIG) {
   kc.loadFromDefault();
 }
 
+// Get namespace configuration
+const NAMESPACE = process.env.NAMESPACE || 'eevee-bot';
+const WATCH_OTHER_NAMESPACES_ENV =
+  process.env.WATCH_OTHER_NAMESPACES || 'false';
+const WATCH_OTHER_NAMESPACES = parseBool(WATCH_OTHER_NAMESPACES_ENV);
+
 export const managedCrds: managedCrd[] = [
   {
     group: eevee.IpcConfig.details.group,
@@ -112,15 +118,34 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
   const customObjectsApi = kc.makeApiClient(K8s.CustomObjectsApi);
 
   try {
-    log.debug('Listing all IpcConfig custom resources');
-    // List all IpcConfig custom resources
-    const ipcConfigList =
-      await customObjectsApi.listCustomObjectForAllNamespaces({
+    let ipcConfigList: {
+      body?: { items?: eevee.IpcConfig.ipcconfigResource[] };
+    };
+
+    if (WATCH_OTHER_NAMESPACES) {
+      log.debug('Listing all IpcConfig custom resources');
+      // List all IpcConfig custom resources
+      ipcConfigList = await customObjectsApi.listCustomObjectForAllNamespaces({
         group: eevee.IpcConfig.details.group,
         version: eevee.IpcConfig.details.version,
         plural: eevee.IpcConfig.details.plural,
       });
-    log.debug('Successfully listed IpcConfig resources');
+      log.debug(
+        'Successfully listed IpcConfig resources across all namespaces'
+      );
+    } else {
+      log.debug(`Listing IpcConfig custom resources in namespace ${NAMESPACE}`);
+      // List IpcConfig custom resources only in the specified namespace
+      ipcConfigList = await customObjectsApi.listNamespacedCustomObject({
+        group: eevee.IpcConfig.details.group,
+        version: eevee.IpcConfig.details.version,
+        namespace: NAMESPACE,
+        plural: eevee.IpcConfig.details.plural,
+      });
+      log.debug(
+        `Successfully listed IpcConfig resources in namespace ${NAMESPACE}`
+      );
+    }
 
     // For each IpcConfig resource, ensure a deployment exists in its namespace
     if (ipcConfigList.body?.items) {

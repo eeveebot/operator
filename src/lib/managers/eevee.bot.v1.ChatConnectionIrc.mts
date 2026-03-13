@@ -17,6 +17,12 @@ if (KUBE_IN_CLUSTER_CONFIG) {
   kc.loadFromDefault();
 }
 
+// Get namespace configuration
+const NAMESPACE = process.env.NAMESPACE || 'eevee-bot';
+const WATCH_OTHER_NAMESPACES_ENV =
+  process.env.WATCH_OTHER_NAMESPACES || 'false';
+const WATCH_OTHER_NAMESPACES = parseBool(WATCH_OTHER_NAMESPACES_ENV);
+
 export const managedCrds: managedCrd[] = [
   {
     group: eevee.ChatConnectionIrc.details.group,
@@ -119,15 +125,39 @@ async function reconcileResource(kc?: K8s.KubeConfig): Promise<void> {
   const customObjectsApi = kc.makeApiClient(K8s.CustomObjectsApi);
 
   try {
-    log.debug('Listing all ChatConnectionIrc custom resources');
-    // List all ChatConnectionIrc custom resources
-    const chatConnectionIrcList =
-      await customObjectsApi.listCustomObjectForAllNamespaces({
-        group: eevee.ChatConnectionIrc.details.group,
-        version: eevee.ChatConnectionIrc.details.version,
-        plural: eevee.ChatConnectionIrc.details.plural,
-      });
-    log.debug('Successfully listed ChatConnectionIrc resources');
+    let chatConnectionIrcList: {
+      body?: { items?: eevee.ChatConnectionIrc.chatconnectionircResource[] };
+    };
+
+    if (WATCH_OTHER_NAMESPACES) {
+      log.debug('Listing all ChatConnectionIrc custom resources');
+      // List all ChatConnectionIrc custom resources
+      chatConnectionIrcList =
+        await customObjectsApi.listCustomObjectForAllNamespaces({
+          group: eevee.ChatConnectionIrc.details.group,
+          version: eevee.ChatConnectionIrc.details.version,
+          plural: eevee.ChatConnectionIrc.details.plural,
+        });
+      log.debug(
+        'Successfully listed ChatConnectionIrc resources across all namespaces'
+      );
+    } else {
+      log.debug(
+        `Listing ChatConnectionIrc custom resources in namespace ${NAMESPACE}`
+      );
+      // List ChatConnectionIrc custom resources only in the specified namespace
+      chatConnectionIrcList = await customObjectsApi.listNamespacedCustomObject(
+        {
+          group: eevee.ChatConnectionIrc.details.group,
+          version: eevee.ChatConnectionIrc.details.version,
+          namespace: NAMESPACE,
+          plural: eevee.ChatConnectionIrc.details.plural,
+        }
+      );
+      log.debug(
+        `Successfully listed ChatConnectionIrc resources in namespace ${NAMESPACE}`
+      );
+    }
 
     // For each ChatConnectionIrc resource, ensure a deployment exists in its namespace
     if (chatConnectionIrcList.body?.items) {
