@@ -141,7 +141,7 @@ async function reconcileResource(
       });
 
     // Validate that the response contains a body
-    if (!chatConnectionIrcResponse || !chatConnectionIrcResponse.body) {
+    if (!chatConnectionIrcResponse) {
       log.error(
         `Failed to retrieve ChatConnectionIrc resource ${resourceName} in namespace ${resourceNamespace}: Empty or invalid response`
       );
@@ -149,7 +149,7 @@ async function reconcileResource(
     }
 
     const item =
-      chatConnectionIrcResponse.body as eevee.ChatConnectionIrc.chatconnectionircResource;
+      chatConnectionIrcResponse as eevee.ChatConnectionIrc.chatconnectionircResource;
     const namespace = item.metadata?.namespace;
     const name = item.metadata?.name;
 

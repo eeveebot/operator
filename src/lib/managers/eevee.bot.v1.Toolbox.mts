@@ -132,14 +132,14 @@ async function reconcileResource(
     });
 
     // Validate that the response contains a body
-    if (!toolboxResponse || !toolboxResponse.body) {
+    if (!toolboxResponse) {
       log.error(
         `Failed to retrieve Toolbox resource ${resourceName} in namespace ${resourceNamespace}: Empty or invalid response`
       );
       return;
     }
 
-    const item = toolboxResponse.body as eevee.Toolbox.toolboxResource;
+    const item = toolboxResponse as eevee.Toolbox.toolboxResource;
     const namespace = item.metadata?.namespace;
     const name = item.metadata?.name;
 
@@ -233,7 +233,7 @@ async function createToolboxDeployment(
         };
       }
 
-      const ipcConfig = ipcConfigResponse.body as IpcConfigResponse;
+      const ipcConfig = ipcConfigResponse as IpcConfigResponse;
       const natsTokenConfig = ipcConfig?.spec?.nats?.token;
 
       if (natsTokenConfig?.secretKeyRef) {

@@ -133,14 +133,14 @@ async function reconcileResource(
     });
 
     // Validate that the response contains a body
-    if (!ipcConfigResponse || !ipcConfigResponse.body) {
+    if (!ipcConfigResponse) {
       log.error(
         `Failed to retrieve IpcConfig resource ${resourceName} in namespace ${resourceNamespace}: Empty or invalid response`
       );
       return;
     }
 
-    const item = ipcConfigResponse.body as eevee.IpcConfig.ipcconfigResource;
+    const item = ipcConfigResponse as eevee.IpcConfig.ipcconfigResource;
     const namespace = item.metadata?.namespace;
     const name = item.metadata?.name;
 
