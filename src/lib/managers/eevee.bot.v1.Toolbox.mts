@@ -198,13 +198,13 @@ async function createToolboxDeployment(
   log.debug(
     `Creating Toolbox deployment for ${toolboxName} in namespace ${namespace}`,
     {
-      ipcConfigName: ipcConfigName || 'none',
+      ipcConfigName: ipcConfigName,
     }
   );
 
   // If ipcConfigName is provided, try to fetch the IPC config to get NATS settings
   const containerEnvVars: K8s.V1EnvVar[] = [];
-  if (ipcConfigName) {
+  if (ipcConfigName && ipcConfigName.length > 0) {
     log.debug(`Fetching IPC config ${ipcConfigName} for NATS settings`);
     try {
       const customObjectsApi = kc.makeApiClient(K8s.CustomObjectsApi);
