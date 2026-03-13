@@ -36,15 +36,11 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
       log.info(
         `Router resource added: ${event.meta.name} in namespace ${event.meta.namespace || 'unknown'}`
       );
-      log.debug(
-        'Triggering reconciliation for added Router resource'
-      );
+      log.debug('Triggering reconciliation for added Router resource');
       // The reconciler will ensure the deployment exists
       try {
         await reconcileResource(kc, event);
-        log.debug(
-          'Reconciliation completed for added Router resource'
-        );
+        log.debug('Reconciliation completed for added Router resource');
       } catch (error) {
         log.error('Error during reconciliation:', error);
       }
@@ -53,15 +49,11 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
       log.info(
         `Router resource modified: ${event.meta.name} in namespace ${event.meta.namespace || 'unknown'}`
       );
-      log.debug(
-        'Triggering reconciliation for modified Router resource'
-      );
+      log.debug('Triggering reconciliation for modified Router resource');
       // The reconciler will ensure the deployment is in the correct state
       try {
         await reconcileResource(kc, event);
-        log.debug(
-          'Reconciliation completed for modified Router resource'
-        );
+        log.debug('Reconciliation completed for modified Router resource');
       } catch (error) {
         log.error('Error during reconciliation:', error);
       }
@@ -131,14 +123,13 @@ async function reconcileResource(
     );
 
     // Get the specific Router resource
-    const routerResponse =
-      await customObjectsApi.getNamespacedCustomObject({
-        group: eevee.Router.details.group,
-        version: eevee.Router.details.version,
-        namespace: resourceNamespace,
-        plural: eevee.Router.details.plural,
-        name: resourceName,
-      });
+    const routerResponse = await customObjectsApi.getNamespacedCustomObject({
+      group: eevee.Router.details.group,
+      version: eevee.Router.details.version,
+      namespace: resourceNamespace,
+      plural: eevee.Router.details.plural,
+      name: resourceName,
+    });
 
     // Validate that the response contains a body
     if (!routerResponse) {
@@ -148,15 +139,12 @@ async function reconcileResource(
       return;
     }
 
-    const item =
-      routerResponse as eevee.Router.routerResource;
+    const item = routerResponse as eevee.Router.routerResource;
     const namespace = item.metadata?.namespace;
     const name = item.metadata?.name;
 
     if (!namespace || !name) {
-      log.debug(
-        'Skipping Router resource with missing namespace or name'
-      );
+      log.debug('Skipping Router resource with missing namespace or name');
       return;
     }
 
@@ -233,14 +221,12 @@ async function createRouterDeployment(
     }
     if (routerConfig?.spec?.pullPolicy) {
       // Type assertion to ensure pullPolicy is a valid value
-      pullPolicy = routerConfig.spec.pullPolicy as K8s.V1Container['imagePullPolicy'];
+      pullPolicy = routerConfig.spec
+        .pullPolicy as K8s.V1Container['imagePullPolicy'];
       log.debug(`Pull policy: ${pullPolicy}`);
     }
   } catch (error) {
-    log.warn(
-      `Failed to process Router ${routerName} for settings:`,
-      error
-    );
+    log.warn(`Failed to process Router ${routerName} for settings:`, error);
   }
 
   // Prepare environment variables for the router
@@ -258,20 +244,6 @@ async function createRouterDeployment(
       value: routerName,
     },
   ];
-
-  // If moduleConfig is provided, add it as an environment variable
-  const moduleConfig = item.spec?.moduleConfig;
-  if (moduleConfig) {
-    try {
-      const moduleConfigJson = JSON.stringify(moduleConfig);
-      containerEnvVars.push({
-        name: 'MODULE_CONFIG',
-        value: moduleConfigJson,
-      });
-    } catch (error) {
-      log.warn('Failed to stringify moduleConfig:', error);
-    }
-  }
 
   // Prepare container ports
   const containerPorts: K8s.V1ContainerPort[] = [];
@@ -297,6 +269,62 @@ async function createRouterDeployment(
     });
   }
 
+  // Prepare volumes and volume mounts
+  const volumes: K8s.V1Volume[] = [];
+  const volumeMounts: K8s.V1VolumeMount[] = [];
+
+  // Handle moduleConfig if provided
+  const moduleConfig = item.spec?.moduleConfig;
+  if (moduleConfig) {
+    try {
+      const coreV1Api = kc.makeApiClient(K8s.CoreV1Api);
+      const configMapName = `${deploymentName}-config`;
+      const configMap: K8s.V1ConfigMap = {
+        metadata: {
+          name: configMapName,
+          namespace: namespace,
+        },
+        data: {
+          'config.yaml': JSON.stringify(moduleConfig, null, 2),
+        },
+      };
+
+      try {
+        await coreV1Api.createNamespacedConfigMap({
+          namespace: namespace,
+          body: configMap,
+        });
+        log.info(
+          `Created ConfigMap ${configMapName} in namespace ${namespace}`
+        );
+      } catch (error) {
+        log.warn(`Failed to create ConfigMap ${configMapName}:`, error);
+      }
+
+      // Add volume for config map
+      volumes.push({
+        name: 'module-config',
+        configMap: {
+          name: configMapName,
+        },
+      });
+
+      // Add volume mount for config map
+      volumeMounts.push({
+        name: 'module-config',
+        mountPath: '/etc/module-config',
+      });
+
+      // Add environment variable pointing to config
+      containerEnvVars.push({
+        name: 'MODULE_CONFIG_PATH',
+        value: '/etc/module-config/config.yaml',
+      });
+    } catch (error) {
+      log.warn('Failed to process moduleConfig:', error);
+    }
+  }
+
   log.debug('Creating deployment object');
 
   const deployment: K8s.V1Deployment = {
@@ -319,6 +347,7 @@ async function createRouterDeployment(
           },
         },
         spec: {
+          volumes: volumes,
           containers: [
             {
               name: 'router',
@@ -326,6 +355,7 @@ async function createRouterDeployment(
               imagePullPolicy: pullPolicy,
               env: containerEnvVars,
               ports: containerPorts,
+              volumeMounts: volumeMounts,
             },
           ],
         },
@@ -345,9 +375,7 @@ async function createRouterDeployment(
       `Successfully created Router deployment ${deploymentName} in namespace ${namespace}` +
         `${metricsEnabled ? ` with metrics enabled on port ${metricsPort}` : ''}`
     );
-    log.debug(
-      `Router deployment creation completed for ${deploymentName}`
-    );
+    log.debug(`Router deployment creation completed for ${deploymentName}`);
   } catch (error) {
     log.error(
       `Failed to create Router deployment in namespace ${namespace}:`,
