@@ -246,6 +246,7 @@ async function createRouterDeployment(
   ];
 
   // If ipcConfigName is provided, try to fetch the IPC config to get NATS settings
+  const ipcConfigName = item.spec?.ipcConfig;
   if (ipcConfigName && ipcConfigName.length > 0) {
     log.debug(`Fetching IPC config ${ipcConfigName} for NATS settings`);
     try {
@@ -258,7 +259,7 @@ async function createRouterDeployment(
           plural: eevee.IpcConfig.details.plural,
           name: ipcConfigName,
         });
-
+ 
       // Define type for IPC config response
       interface IpcConfigResponse {
         spec?: {
@@ -274,14 +275,14 @@ async function createRouterDeployment(
           };
         };
       }
-
+ 
       const ipcConfig = ipcConfigResponse as IpcConfigResponse;
       const natsTokenConfig = ipcConfig?.spec?.nats?.token;
-
+ 
       if (natsTokenConfig?.secretKeyRef) {
         const secretName = natsTokenConfig.secretKeyRef.secret.name;
         log.debug(`Found NATS token secret reference: ${secretName}`);
-
+ 
         // Add NATS_HOST from the same secret (assuming it's in a field called 'host')
         containerEnvVars.push({
           name: 'NATS_HOST',
@@ -292,7 +293,7 @@ async function createRouterDeployment(
             },
           },
         });
-
+ 
         // Add NATS_TOKEN from the secret reference
         containerEnvVars.push({
           name: 'NATS_TOKEN',
