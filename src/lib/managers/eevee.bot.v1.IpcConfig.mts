@@ -256,23 +256,40 @@ async function createNatsDeployment(
 
   // Generate deployment name based on ipcconfig name
   const deploymentName = `eevee-${ipcConfigName}-nats`;
-  const configMapName = `${deploymentName}-config`;
+  const configSecretName = `${deploymentName}-config`;
   log.debug(`Generated deployment name: ${deploymentName}`);
-  log.debug(`Generated configmap name: ${configMapName}`);
+  log.debug(`Generated config secret name: ${configSecretName}`);
 
-  // Create ConfigMap for NATS configuration
-  await createNatsConfigMap(
+  // Get the NATS token from the secret if it exists
+  let natsToken = '';
+  if (natsTokenSecretName) {
+    try {
+      const coreV1Api = kc.makeApiClient(K8s.CoreV1Api);
+      const secretResponse = await coreV1Api.readNamespacedSecret({
+        name: natsTokenSecretName,
+        namespace: namespace,
+      });
+      const secretData = secretResponse?.data;
+      if (secretData && secretData.token) {
+        // Decode base64 encoded token
+        natsToken = Buffer.from(secretData.token, 'base64').toString('utf-8');
+      }
+    } catch (error) {
+      log.warn(`Failed to read NATS token secret:`, error);
+    }
+  }
+
+  // Create Secret for NATS configuration with embedded token
+  await createNatsConfigSecret(
     kc.makeApiClient(K8s.CoreV1Api),
     namespace,
-    configMapName,
-    ipcConfigName
+    configSecretName,
+    ipcConfigName,
+    natsToken
   );
 
   // Prepare command arguments for NATS server with config file and auth
-  const commandArgs = [
-    '--config',
-    '/etc/nats-config/nats.conf',
-  ];
+  const commandArgs = ['--config', '/etc/nats-config/nats.conf'];
 
   // Get the image from the IPC config spec if available
   let natsImage = 'docker.io/nats:latest';
@@ -326,8 +343,8 @@ async function createNatsDeployment(
           volumes: [
             {
               name: 'nats-config-volume',
-              configMap: {
-                name: configMapName,
+              secret: {
+                secretName: configSecretName,
               },
             },
           ],
@@ -449,19 +466,21 @@ async function createNatsTokenSecret(
 }
 
 /**
- * Creates a Kubernetes ConfigMap containing NATS server configuration
+ * Creates a Kubernetes Secret containing NATS server configuration with embedded token
  * @param coreV1Api The Kubernetes CoreV1Api client
- * @param namespace The namespace to create the ConfigMap in
- * @param configMapName The name of the ConfigMap to create
+ * @param namespace The namespace to create the Secret in
+ * @param configSecretName The name of the Secret to create
  * @param ipcConfigName The name of the IPC config custom resource
+ * @param natsToken The NATS authentication token to embed in the configuration
  */
-async function createNatsConfigMap(
+async function createNatsConfigSecret(
   coreV1Api: K8s.CoreV1Api,
   namespace: string,
-  configMapName: string,
-  ipcConfigName: string
+  configSecretName: string,
+  ipcConfigName: string,
+  natsToken: string
 ): Promise<void> {
-  // Define the NATS configuration
+  // Define the NATS configuration with embedded token
   const natsConfig = `
 # NATS Server Configuration
 port: 4222
@@ -475,7 +494,7 @@ logtime: false
 
 # Authorization configuration
 authorization {
-  token: "$NATS_TOKEN"
+  token: "${natsToken}"
 }
 
 # Store directory
@@ -483,49 +502,50 @@ store_dir: "/tmp/nats"
 
 `;
 
-  // Create the ConfigMap object
-  const configMap: K8s.V1ConfigMap = {
+  // Create the Secret object
+  const configSecret: K8s.V1Secret = {
     metadata: {
-      name: configMapName,
+      name: configSecretName,
       namespace: namespace,
     },
-    data: {
+    type: 'Opaque',
+    stringData: {
       'nats.conf': natsConfig.trim(),
     },
   };
 
   try {
-    // Check if ConfigMap already exists
+    // Check if Secret already exists
     try {
-      await coreV1Api.readNamespacedConfigMap({
-        name: configMapName,
+      await coreV1Api.readNamespacedSecret({
+        name: configSecretName,
         namespace: namespace,
       });
       log.debug(
-        `ConfigMap ${configMapName} already exists in namespace ${namespace}`
+        `Secret ${configSecretName} already exists in namespace ${namespace}`
       );
-      // Update the existing ConfigMap
-      await coreV1Api.replaceNamespacedConfigMap({
-        name: configMapName,
+      // Update the existing Secret
+      await coreV1Api.replaceNamespacedSecret({
+        name: configSecretName,
         namespace: namespace,
-        body: configMap,
+        body: configSecret,
       });
       log.info(
-        `Successfully updated ConfigMap ${configMapName} in namespace ${namespace}`
+        `Successfully updated Secret ${configSecretName} in namespace ${namespace}`
       );
     } catch {
-      // ConfigMap doesn't exist, create it
-      await coreV1Api.createNamespacedConfigMap({
+      // Secret doesn't exist, create it
+      await coreV1Api.createNamespacedSecret({
         namespace: namespace,
-        body: configMap,
+        body: configSecret,
       });
       log.info(
-        `Successfully created ConfigMap ${configMapName} in namespace ${namespace}`
+        `Successfully created Secret ${configSecretName} in namespace ${namespace}`
       );
     }
   } catch (error) {
     log.error(
-      `Failed to create/update ConfigMap ${configMapName} in namespace ${namespace}:`,
+      `Failed to create/update Secret ${configSecretName} in namespace ${namespace}:`,
       error
     );
     throw error;
