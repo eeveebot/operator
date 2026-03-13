@@ -19,11 +19,15 @@ import { parseBool } from './lib/functions.mjs';
 import { managedCrds as ChatConnectionIrc } from './lib/managers/eevee.bot.v1.ChatConnectionIrc.mjs';
 import { managedCrds as IpcConfig } from './lib/managers/eevee.bot.v1.IpcConfig.mjs';
 import { managedCrds as Toolbox } from './lib/managers/eevee.bot.v1.Toolbox.mjs';
+import { managedCrds as Router } from './lib/managers/eevee.bot.v1.Router.mjs';
+import { managedCrds as BotModule } from './lib/managers/eevee.bot.v1.BotModule.mjs';
 
 const managedCrds: managedCrd[] = [];
 managedCrds.push(...ChatConnectionIrc);
 managedCrds.push(...IpcConfig);
 managedCrds.push(...Toolbox);
+managedCrds.push(...Router);
+managedCrds.push(...BotModule);
 
 // Get some runtime config from envvars
 // Namespace the operator lives in
