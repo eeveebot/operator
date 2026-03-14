@@ -71,7 +71,7 @@ setupHttpServer();
  */
 function setupHttpServer() {
   const app: Application = express();
-  const port = process.env.HTTP_API_PORT || '3000';
+  const port = process.env.HTTP_API_PORT || '9000';
 
   // Middleware
   app.use(express.json());

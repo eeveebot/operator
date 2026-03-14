@@ -261,6 +261,29 @@ async function createModuleDeployment(
     },
   ];
 
+  // Check if we should mount the operator API token
+  if (item.spec?.mountOperatorApiToken) {
+    const operatorApiToken = process.env.EEVEE_OPERATOR_API_TOKEN;
+    if (operatorApiToken) {
+      log.debug('Mounting operator API token to module environment');
+      containerEnvVars.push({
+        name: 'EEVEE_OPERATOR_API_TOKEN',
+        value: operatorApiToken,
+      });
+
+      // Also set the operator API URL
+      const operatorApiUrl = `http://eevee-eevee-operator-service.${namespace}.svc.cluster.local.:9000`;
+      containerEnvVars.push({
+        name: 'EEVEE_OPERATOR_API_URL',
+        value: operatorApiUrl,
+      });
+    } else {
+      log.warn(
+        'mountOperatorApiToken is true but EEVEE_OPERATOR_API_TOKEN is not set in operator environment'
+      );
+    }
+  }
+
   // If ipcConfigName is provided, try to fetch the IPC config to get NATS settings
   const ipcConfigName = item.spec?.ipcConfig;
   if (ipcConfigName && ipcConfigName.length > 0) {
@@ -396,19 +419,19 @@ async function createModuleDeployment(
 
   // Handle moduleConfig if provided
   const moduleConfig = item.spec?.moduleConfig;
-    if (moduleConfig) {
-      try {
-        const coreV1Api = kc.makeApiClient(K8s.CoreV1Api);
-        const configMapName = `${deploymentName}-config`;
-        const configMap: K8s.V1ConfigMap = {
-          metadata: {
-            name: configMapName,
-            namespace: namespace,
-          },
-          data: {
-            'config.yaml': moduleConfig,
-          },
-        };
+  if (moduleConfig) {
+    try {
+      const coreV1Api = kc.makeApiClient(K8s.CoreV1Api);
+      const configMapName = `${deploymentName}-config`;
+      const configMap: K8s.V1ConfigMap = {
+        metadata: {
+          name: configMapName,
+          namespace: namespace,
+        },
+        data: {
+          'config.yaml': moduleConfig,
+        },
+      };
 
       try {
         await coreV1Api.createNamespacedConfigMap({
@@ -584,6 +607,44 @@ async function updateModuleDeployment(
     });
 
     const deployment = deploymentResponse as K8s.V1Deployment;
+
+    // Check if we should mount the operator API token
+    if (item.spec?.mountOperatorApiToken) {
+      const operatorApiToken = process.env.EEVEE_OPERATOR_API_TOKEN;
+      if (operatorApiToken) {
+        log.debug('Mounting operator API token to module environment');
+        // Add the EEVEE_OPERATOR_API_TOKEN to container environment variables
+        if (deployment?.spec?.template?.spec?.containers) {
+          const container = deployment.spec.template.spec.containers[0];
+          if (container) {
+            // Check if the env var already exists
+            const tokenEnvIndex = container.env?.findIndex(
+              (env: K8s.V1EnvVar) => env.name === 'EEVEE_OPERATOR_API_TOKEN'
+            );
+
+            if (tokenEnvIndex === -1 || tokenEnvIndex === undefined) {
+              // Add the token environment variable if it doesn't exist
+              container.env = container.env || [];
+              container.env.push({
+                name: 'EEVEE_OPERATOR_API_TOKEN',
+                value: operatorApiToken,
+              });
+
+              // Also set the operator API URL
+              const operatorApiUrl = `http://eevee-eevee-operator-service.${namespace}.svc.cluster.local.:9000`;
+              container.env.push({
+                name: 'EEVEE_OPERATOR_API_URL',
+                value: operatorApiUrl,
+              });
+            }
+          }
+        }
+      } else {
+        log.warn(
+          'mountOperatorApiToken is true but EEVEE_OPERATOR_API_TOKEN is not set in operator environment'
+        );
+      }
+    }
 
     // Update the deployment properties
     if (
