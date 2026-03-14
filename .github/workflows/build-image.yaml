@@ -2,6 +2,8 @@ name: Build Operator Image
 
 on:
   push:
+    tags:
+      - '*'
     branches:
       - main
 
