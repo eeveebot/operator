@@ -1,6 +1,6 @@
 {
   "name": "@eeveebot/operator",
-  "version": "0.0.12",
+  "version": "0.1.0",
   "description": "the eevee operator",
   "keywords": [
     "eevee"
