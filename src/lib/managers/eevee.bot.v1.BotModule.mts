@@ -3,7 +3,6 @@
 import { eevee } from '@eeveebot/crds';
 import { ResourceEvent, ResourceEventType } from '@thehonker/k8s-operator';
 import * as K8s from '@kubernetes/client-node';
-import { dump as yamlDump } from 'js-yaml';
 
 import { log } from '../../lib/logging.mjs';
 import { managedCrd } from '../../lib/managers/types.mjs';
@@ -397,19 +396,19 @@ async function createModuleDeployment(
 
   // Handle moduleConfig if provided
   const moduleConfig = item.spec?.moduleConfig;
-  if (moduleConfig) {
-    try {
-      const coreV1Api = kc.makeApiClient(K8s.CoreV1Api);
-      const configMapName = `${deploymentName}-config`;
-      const configMap: K8s.V1ConfigMap = {
-        metadata: {
-          name: configMapName,
-          namespace: namespace,
-        },
-        data: {
-          'config.yaml': yamlDump(moduleConfig, { indent: 2 }),
-        },
-      };
+    if (moduleConfig) {
+      try {
+        const coreV1Api = kc.makeApiClient(K8s.CoreV1Api);
+        const configMapName = `${deploymentName}-config`;
+        const configMap: K8s.V1ConfigMap = {
+          metadata: {
+            name: configMapName,
+            namespace: namespace,
+          },
+          data: {
+            'config.yaml': moduleConfig,
+          },
+        };
 
       try {
         await coreV1Api.createNamespacedConfigMap({
@@ -653,7 +652,7 @@ async function updateModuleDeployment(
           namespace: namespace,
         },
         data: {
-          'config.yaml': yamlDump(moduleConfig, { indent: 2 }),
+          'config.yaml': moduleConfig,
         },
       };
 
