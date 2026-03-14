@@ -411,6 +411,12 @@ async function createModuleDeployment(
       mountPath: volumeMountPath,
     });
 
+    // Add MODULE_DATA environment variable pointing to the mounted PVC directory
+    containerEnvVars.push({
+      name: 'MODULE_DATA',
+      value: volumeMountPath,
+    });
+
     // Create the PVC
     try {
       await coreV1Api.createNamespacedPersistentVolumeClaim({
@@ -662,7 +668,8 @@ async function updateModuleDeployment(
     if (deployment?.spec?.template?.spec?.containers) {
       const container = deployment.spec.template.spec.containers[0];
       if (container) {
-        // Initialize envFrom if it doesn't exist
+        // Initialize env and envFrom if they don't exist
+        container.env = container.env || [];
         container.envFrom = container.envFrom || [];
 
         // Check if envSecret is provided
@@ -684,6 +691,29 @@ async function updateModuleDeployment(
                 name: item.spec.envSecret.name,
               },
             });
+          }
+        }
+
+        // Ensure MODULE_DATA environment variable is set if PVC is used
+        if (item.spec?.persistentVolumeClaim) {
+          const hasModuleDataEnv = container.env.some(
+            (env: K8s.V1EnvVar) => env.name === 'MODULE_DATA'
+          );
+
+          if (!hasModuleDataEnv) {
+            // Determine the volume mount path
+            let volumeMountPath = '/data';
+            if (item.spec?.volumeMountPath) {
+              volumeMountPath = item.spec.volumeMountPath;
+            }
+
+            container.env.push({
+              name: 'MODULE_DATA',
+              value: volumeMountPath,
+            });
+            log.debug(
+              `Added MODULE_DATA environment variable with value: ${volumeMountPath}`
+            );
           }
         }
       }
