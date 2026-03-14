@@ -124,6 +124,8 @@ router.post('/action/restart-module', async (req: Request, res: Response) => {
       details: error.message,
     });
   }
+
+  return res.status(200);
 });
 
 export default router;
