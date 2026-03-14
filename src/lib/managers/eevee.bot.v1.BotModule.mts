@@ -7,6 +7,7 @@ import * as K8s from '@kubernetes/client-node';
 import { log } from '../../lib/logging.mjs';
 import { managedCrd } from '../../lib/managers/types.mjs';
 import { parseBool } from '../../lib/functions.mjs';
+import { k8sResourceEventsTotal } from '../../lib/metrics.mjs';
 
 // Create KubeConfig for this manager
 const kc = new K8s.KubeConfig();
@@ -34,6 +35,12 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
   const moduleName =
     (event.object as eevee.BotModule.botmoduleResource)?.spec?.moduleName ||
     event.meta.name;
+
+  // Track Kubernetes resource events
+  k8sResourceEventsTotal.inc({
+    resource_type: 'BotModule',
+    event_type: event.type
+  });
 
   // Handle specific event types differently
   switch (event.type) {

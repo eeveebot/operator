@@ -19,6 +19,9 @@ import { parseBool } from './lib/functions.mjs';
 // Import API routes
 import apiRoutes from './api/routes.mjs';
 
+// Import metrics
+import { k8sActiveWatches } from './lib/metrics.mjs';
+
 import { managedCrds as IpcConfig } from './lib/managers/eevee.bot.v1.IpcConfig.mjs';
 import { managedCrds as BotModule } from './lib/managers/eevee.bot.v1.BotModule.mjs';
 
@@ -140,7 +143,9 @@ async function checkCRDs() {
  * Setup resource watches in k8s api
  */
 async function setupResourceWatchers() {
-  managedCrds.forEach(async (crd: managedCrd) => {
+  let activeWatches = 0;
+  
+  for (const crd of managedCrds) {
     await op.watchResource(
       crd.group,
       crd.version,
@@ -148,5 +153,7 @@ async function setupResourceWatchers() {
       crd.handler,
       WATCH_OTHER_NAMESPACES ? undefined : NAMESPACE
     );
-  });
+    activeWatches++;
+    k8sActiveWatches.set(activeWatches);
+  }
 }

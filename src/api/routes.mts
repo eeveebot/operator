@@ -4,6 +4,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import * as K8s from '@kubernetes/client-node';
 import { log } from '../lib/logging.mjs';
 import { parseBool } from '../lib/functions.mjs';
+import { register, apiRequestsTotal, apiRequestDurationSeconds, moduleRestartsTotal } from '../lib/metrics.mjs';
 
 // Setup Kubernetes client
 const kc = new K8s.KubeConfig();
@@ -15,6 +16,17 @@ if (KUBE_IN_CLUSTER_CONFIG) {
 }
 
 const router = Router();
+
+// Metrics endpoint (no authentication required)
+router.get('/metrics', async (req: Request, res: Response) => {
+  try {
+    res.set('Content-Type', register.contentType);
+    res.end(await register.metrics());
+  } catch (error) {
+    log.error('Error generating metrics:', error);
+    res.status(500).end();
+  }
+});
 
 // Authentication middleware
 const authenticateToken = (req: Request, res: Response, next: NextFunction) => {
@@ -50,8 +62,39 @@ const authenticateToken = (req: Request, res: Response, next: NextFunction) => {
   next();
 };
 
-// Apply authentication middleware to all routes
-router.use(authenticateToken);
+// Apply authentication middleware to all routes except metrics
+router.use((req: Request, res: Response, next: NextFunction) => {
+  // Skip authentication for metrics endpoint
+  if (req.path === '/metrics') {
+    return next();
+  }
+  authenticateToken(req, res, next);
+});
+
+// Request tracking middleware
+router.use((req: Request, res: Response, next: NextFunction) => {
+  const start = Date.now();
+  
+  // Track response finish to record metrics
+  res.on('finish', () => {
+    const duration = (Date.now() - start) / 1000; // Convert to seconds
+    
+    // Record request duration
+    apiRequestDurationSeconds.observe({
+      method: req.method,
+      route: req.route?.path || req.path
+    }, duration);
+    
+    // Record request count
+    apiRequestsTotal.inc({
+      method: req.method,
+      route: req.route?.path || req.path,
+      status_code: res.statusCode.toString()
+    });
+  });
+  
+  next();
+});
 
 // Health check endpoint
 router.get('/health', (req: Request, res: Response) => {
@@ -98,11 +141,26 @@ router.post('/action/restart-module', async (req: Request, res: Response) => {
         namespace: namespace,
         body: patch,
       });
+      
+      // Track successful module restart
+      moduleRestartsTotal.inc({
+        module_name: moduleName,
+        namespace: namespace,
+        success: 'true'
+      });
     } catch (error: any) {
       if (error.response && error.response.statusCode === 404) {
         log.warn(
           `Deployment ${deploymentName} not found in namespace ${namespace}`
         );
+        
+        // Track failed module restart
+        moduleRestartsTotal.inc({
+          module_name: moduleName,
+          namespace: namespace,
+          success: 'false'
+        });
+        
         return res.status(404).json({
           error: `Deployment for module ${moduleName} not found in namespace ${namespace}`,
         });
@@ -112,6 +170,14 @@ router.post('/action/restart-module', async (req: Request, res: Response) => {
         `Failed to restart deployment ${deploymentName} in namespace ${namespace}:`,
         error
       );
+      
+      // Track failed module restart
+      moduleRestartsTotal.inc({
+        module_name: moduleName,
+        namespace: namespace,
+        success: 'false'
+      });
+      
       return res.status(500).json({
         error: `Failed to restart module ${moduleName}`,
         details: error.message,
