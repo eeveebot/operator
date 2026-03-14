@@ -210,6 +210,13 @@ async function createModuleDeployment(
     `Creating module deployment for "${moduleName}" in namespace ${namespace}`
   );
 
+  // Check if the module is enabled
+  const isEnabled = item.spec?.enabled !== undefined ? item.spec.enabled : true;
+  if (!isEnabled) {
+    log.info(`BotModule "${moduleName}" is disabled, skipping deployment creation`);
+    return;
+  }
+
   // Generate deployment name based on botmodule name
   const deploymentName = `eevee-${moduleName}-module`;
   log.debug(`Generated deployment name: ${deploymentName}`);
@@ -603,8 +610,25 @@ async function updateModuleDeployment(
     `Updating module deployment for "${moduleName}" in namespace ${namespace}`
   );
 
-  // Generate deployment name based on botmodule name
+  // Check if the module is enabled
+  const isEnabled = item.spec?.enabled !== undefined ? item.spec.enabled : true;
   const deploymentName = `eevee-${moduleName}-module`;
+
+  // If the module is disabled, delete the deployment if it exists
+  if (!isEnabled) {
+    try {
+      log.info(`BotModule "${moduleName}" is disabled, deleting deployment if it exists`);
+      await appsV1Api.deleteNamespacedDeployment({
+        name: deploymentName,
+        namespace: namespace,
+      });
+      log.info(`Deleted deployment ${deploymentName} for disabled BotModule "${moduleName}"`);
+    } catch (error) {
+      // Ignore errors if deployment doesn't exist
+      log.debug(`Deployment ${deploymentName} for disabled BotModule "${moduleName}" not found or already deleted`);
+    }
+    return;
+  }
 
   // Get configuration from the BotModule spec
   let moduleImage = 'ghcr.io/eeveebot/module:latest';
