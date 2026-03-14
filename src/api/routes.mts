@@ -23,9 +23,7 @@ const authenticateToken = (req: Request, res: Response, next: NextFunction) => {
 
   // If no token is configured, allow all requests (dev mode)
   if (!token) {
-    log.warn(
-      'No EEVEE_OPERATOR_API_TOKEN configured - API disabled'
-    );
+    log.warn('No EEVEE_OPERATOR_API_TOKEN configured - API disabled');
     return res.status(401).json({ error: 'API Token not configured' });
   }
 
@@ -83,33 +81,22 @@ router.post('/action/restart-module', async (req: Request, res: Response) => {
     // Get AppsV1Api client
     const appsV1Api = kc.makeApiClient(K8s.AppsV1Api);
 
-    // Patch the deployment with a restart annotation
-    const patch = {
-      spec: {
-        template: {
-          metadata: {
-            annotations: {
-              'kubectl.kubernetes.io/restartedAt': new Date().toISOString(),
-            },
-          },
+    // Patch the deployment with a restart annotation using JSON Patch format
+    const patch = [
+      {
+        op: 'add',
+        path: '/spec/template/metadata/annotations',
+        value: {
+          'kubectl.kubernetes.io/restartedAt': new Date().toISOString(),
         },
       },
-    };
+    ];
 
     try {
       await appsV1Api.patchNamespacedDeployment({
         name: deploymentName,
         namespace: namespace,
         body: patch,
-      });
-
-      log.info(
-        `Successfully restarted deployment ${deploymentName} in namespace ${namespace}`
-      );
-      res.status(200).json({
-        message: `Successfully restarted module ${moduleName}`,
-        deployment: deploymentName,
-        namespace: namespace,
       });
     } catch (error: any) {
       if (error.response && error.response.statusCode === 404) {
