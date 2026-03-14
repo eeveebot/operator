@@ -1,7 +1,7 @@
 'use strict';
 
 import * as K8s from '@kubernetes/client-node';
-
+import express, { Application, Request, Response } from 'express';
 import { default as Operator } from '@thehonker/k8s-operator';
 
 // Critical
@@ -15,6 +15,9 @@ import { managedCrd } from './lib/managers/types.mjs';
 
 // Import utility functions
 import { parseBool } from './lib/functions.mjs';
+
+// Import API routes
+import apiRoutes from './api/routes.mjs';
 
 import { managedCrds as IpcConfig } from './lib/managers/eevee.bot.v1.IpcConfig.mjs';
 import { managedCrds as BotModule } from './lib/managers/eevee.bot.v1.BotModule.mjs';
@@ -59,6 +62,41 @@ if (!(await checkCRDs())) {
 
 // Setup resource watchers so we know when CR objects change
 await setupResourceWatchers();
+
+// Setup HTTP API server
+setupHttpServer();
+
+/**
+ * Setup HTTP API server
+ */
+function setupHttpServer() {
+  const app: Application = express();
+  const port = process.env.HTTP_API_PORT || '3000';
+
+  // Middleware
+  app.use(express.json());
+
+  // API routes
+  app.use('/api', apiRoutes);
+
+  // Root endpoint
+  app.get('/', (req: Request, res: Response) => {
+    res.status(200).json({
+      message: 'eevee.bot Operator API',
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  // Start server
+  const server = app.listen(port, () => {
+    log.info(`HTTP API server listening on port ${port}`);
+  });
+
+  // Handle server errors
+  server.on('error', (err) => {
+    log.error('HTTP API server error', err);
+  });
+}
 
 /**
  * Cleanup before exit
