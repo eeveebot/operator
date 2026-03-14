@@ -249,17 +249,28 @@ async function createModuleDeployment(
   const containerEnvVars: K8s.V1EnvVar[] = [
     {
       name: 'NAMESPACE',
-      valueFrom: {
-        fieldRef: {
-          fieldPath: 'metadata.namespace',
-        },
-      },
+      value: process.env.NAMESPACE || 'eevee-bot',
     },
     {
       name: 'RESOURCE_NAME',
       value: moduleName,
     },
   ];
+
+  // Prepare envFrom for secret injection
+  const containerEnvFrom: K8s.V1EnvFromSource[] = [];
+
+  // Check if envSecret is provided and add it to envFrom
+  if (item.spec?.envSecret) {
+    log.debug(
+      `Adding envSecret ${item.spec.envSecret.name} to module environment`
+    );
+    containerEnvFrom.push({
+      secretRef: {
+        name: item.spec.envSecret.name,
+      },
+    });
+  }
 
   // Check if we should mount the operator API token
   if (item.spec?.mountOperatorApiToken) {
@@ -518,6 +529,7 @@ async function createModuleDeployment(
               image: moduleImage,
               imagePullPolicy: pullPolicy,
               env: containerEnvVars,
+              envFrom: containerEnvFrom,
               ports: containerPorts,
               volumeMounts: volumeMounts,
             },
@@ -643,6 +655,37 @@ async function updateModuleDeployment(
         log.warn(
           'mountOperatorApiToken is true but EEVEE_OPERATOR_API_TOKEN is not set in operator environment'
         );
+      }
+    }
+
+    // Handle envSecret in updates
+    if (deployment?.spec?.template?.spec?.containers) {
+      const container = deployment.spec.template.spec.containers[0];
+      if (container) {
+        // Initialize envFrom if it doesn't exist
+        container.envFrom = container.envFrom || [];
+
+        // Check if envSecret is provided
+        if (item.spec?.envSecret) {
+          log.debug(
+            `Updating envSecret ${item.spec.envSecret.name} in module environment`
+          );
+
+          // Check if the secretRef already exists in envFrom
+          const secretExists = container.envFrom.some(
+            (envFrom: K8s.V1EnvFromSource) =>
+              envFrom.secretRef?.name === item.spec?.envSecret?.name
+          );
+
+          // Add the secretRef if it doesn't exist
+          if (!secretExists) {
+            container.envFrom.push({
+              secretRef: {
+                name: item.spec.envSecret.name,
+              },
+            });
+          }
+        }
       }
     }
 
