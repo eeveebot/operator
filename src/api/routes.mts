@@ -119,13 +119,16 @@ router.post('/action/restart-module', async (req: Request, res: Response) => {
     }
   } catch (error: any) {
     log.error('Error processing restart-module request:', error);
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Internal server error',
       details: error.message,
     });
   }
 
-  return res.status(200);
+  // Return success response
+  return res.status(200).json({
+    message: `Module ${req.body.moduleName} restart initiated successfully`,
+  });
 });
 
 export default router;
