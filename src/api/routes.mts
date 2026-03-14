@@ -144,25 +144,41 @@ router.get('/bot-modules', async (req: Request, res: Response) => {
     }
 
     // Log the raw response for debugging
-    log.debug('Raw botModulesResponse:', { 
-      hasBody: !!botModulesResponse.body,
-      hasResponse: !!botModulesResponse.response,
-      statusCode: botModulesResponse.response?.statusCode,
-      headers: botModulesResponse.response?.headers,
-      bodyType: typeof botModulesResponse.body,
-      responseType: typeof botModulesResponse.response
+    log.debug('Raw botModulesResponse structure:', { 
+      keys: Object.keys(botModulesResponse || {}),
+      hasBody: !!botModulesResponse?.body,
+      hasResponse: !!botModulesResponse?.response,
+      bodyType: typeof botModulesResponse?.body,
+      responseType: typeof botModulesResponse?.response,
+      sample: JSON.stringify(botModulesResponse, null, 2).substring(0, 1000) // First 1000 chars
     });
 
-    if (!botModulesResponse.body) {
-      log.error('Empty botModulesResponse body received');
+    // Check if response body exists and has items
+    if (!botModulesResponse) {
+      log.error('Empty botModulesResponse received from Kubernetes API');
       return res.status(500).json({
         error: 'Failed to fetch bot modules',
-        details: 'Empty response body from Kubernetes API',
+        details: 'Empty response from Kubernetes API',
       });
     }
 
-    // Extract the items from the response
-    const botModules = (botModulesResponse.body as any).items || [];
+    // The data we want might be directly in the response object
+    let botModules = [];
+    if (botModulesResponse.body && botModulesResponse.body.items) {
+      // Standard Kubernetes API response format
+      botModules = botModulesResponse.body.items || [];
+    } else if (botModulesResponse.items) {
+      // Direct items in response
+      botModules = botModulesResponse.items || [];
+    } else if (botModulesResponse.body) {
+      // Just the body itself
+      botModules = [botModulesResponse.body];
+    } else {
+      log.warn('Unexpected botModulesResponse structure, using empty array');
+      botModules = [];
+    }
+
+    log.debug('Extracted botModules count:', { count: botModules.length });
 
     // Map to simplified structure with module name and image info
     const moduleInfo = botModules.map((module: any) => {
