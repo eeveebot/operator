@@ -623,7 +623,7 @@ async function updateModuleDeployment(
         namespace: namespace,
       });
       log.info(`Deleted deployment ${deploymentName} for disabled BotModule "${moduleName}"`);
-    } catch (error) {
+    } catch {
       // Ignore errors if deployment doesn't exist
       log.debug(`Deployment ${deploymentName} for disabled BotModule "${moduleName}" not found or already deleted`);
     }
