@@ -130,16 +130,34 @@ router.get('/bot-modules', async (req: Request, res: Response) => {
     // Log the raw response for debugging
     log.debug('Raw botModulesResponse:', { 
       body: botModulesResponse.body,
-      statusCode: botModulesResponse.response.statusCode,
-      headers: botModulesResponse.response.headers
+      statusCode: botModulesResponse.response?.statusCode,
+      headers: botModulesResponse.response?.headers
     });
 
     // Check if response body exists and has items
-    if (!botModulesResponse || !botModulesResponse.body) {
-      log.error('Empty or invalid botModulesResponse received');
+    if (!botModulesResponse) {
+      log.error('Empty botModulesResponse received from Kubernetes API');
       return res.status(500).json({
         error: 'Failed to fetch bot modules',
         details: 'Empty response from Kubernetes API',
+      });
+    }
+
+    // Log the raw response for debugging
+    log.debug('Raw botModulesResponse:', { 
+      hasBody: !!botModulesResponse.body,
+      hasResponse: !!botModulesResponse.response,
+      statusCode: botModulesResponse.response?.statusCode,
+      headers: botModulesResponse.response?.headers,
+      bodyType: typeof botModulesResponse.body,
+      responseType: typeof botModulesResponse.response
+    });
+
+    if (!botModulesResponse.body) {
+      log.error('Empty botModulesResponse body received');
+      return res.status(500).json({
+        error: 'Failed to fetch bot modules',
+        details: 'Empty response body from Kubernetes API',
       });
     }
 
