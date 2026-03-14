@@ -101,6 +101,50 @@ router.get('/health', (req: Request, res: Response) => {
   res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Get bot modules endpoint - returns list of botModules and their image/tag
+router.get('/bot-modules', async (req: Request, res: Response) => {
+  try {
+    // Get CustomObjectsApi client
+    const customObjectsApi = kc.makeApiClient(K8s.CustomObjectsApi);
+    
+    // Get all BotModule resources across all namespaces
+    const botModulesResponse = await customObjectsApi.listClusterCustomObject({
+      group: 'eevee.bot',
+      version: 'v1',
+      plural: 'botmodules',
+    });
+
+    // Extract the items from the response
+    const botModules = (botModulesResponse.body as any).items || [];
+    
+    // Map to simplified structure with module name and image info
+    const moduleInfo = botModules.map((module: any) => {
+      const moduleName = module.metadata?.name;
+      const namespace = module.metadata?.namespace;
+      const image = module.spec?.image || 'unknown';
+      
+      // Extract tag from image (everything after the last colon)
+      const tag = image.includes(':') ? image.split(':').pop() : 'unknown';
+      
+      return {
+        name: moduleName,
+        namespace: namespace,
+        image: image,
+        tag: tag,
+        enabled: module.spec?.enabled !== undefined ? module.spec.enabled : true
+      };
+    });
+    
+    res.status(200).json(moduleInfo);
+  } catch (error: any) {
+    log.error('Error fetching bot modules:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch bot modules',
+      details: error.message 
+    });
+  }
+});
+
 // Restart module endpoint - performs rollout restart of a botModule-driven deployment
 router.post('/action/restart-module', async (req: Request, res: Response) => {
   try {
