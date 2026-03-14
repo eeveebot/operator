@@ -1,6 +1,6 @@
 {
   "name": "@eeveebot/operator",
-  "version": "2.2.17",
+  "version": "2.2.18",
   "description": "the eevee operator",
   "keywords": [
     "eevee"
@@ -18,12 +18,12 @@
   "type": "module",
   "devDependencies": {
     "@types/express": "^5.0.6",
-    "@types/node": "^18",
+    "@types/node": "^18.19.130",
     "@types/ws": "^8.18.1",
-    "@typescript-eslint/eslint-plugin": "^8.52.0",
-    "@typescript-eslint/parser": "^8.50.1",
-    "eslint": "^9.39.2",
-    "prettier": "^3.7.4",
+    "@typescript-eslint/eslint-plugin": "^8.57.0",
+    "@typescript-eslint/parser": "^8.57.0",
+    "eslint": "^9.39.4",
+    "prettier": "^3.8.1",
     "typescript": "^5.9.3"
   },
   "dependencies": {
