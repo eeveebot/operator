@@ -162,9 +162,27 @@ router.get('/bot-modules', async (req: Request, res: Response) => {
       });
     }
 
-    let botModules = botModulesResponse;
+    // The data we want might be directly in the response object
+    let botModules = [];
+    if (botModulesResponse.body && botModulesResponse.body.items) {
+      // Standard Kubernetes API response format
+      botModules = botModulesResponse.body.items || [];
+    } else if (botModulesResponse.items) {
+      // Direct items in response (this is what we're seeing in the logs)
+      botModules = botModulesResponse.items || [];
+    } else if (botModulesResponse.body) {
+      // Just the body itself
+      botModules = [botModulesResponse.body];
+    } else {
+      log.warn('Unexpected botModulesResponse structure, using empty array');
+      botModules = [];
+    }
 
     log.debug('Extracted botModules count:', { count: botModules.length });
+    log.debug('botModules type and first item:', { 
+      type: Array.isArray(botModules) ? 'array' : typeof botModules,
+      firstItem: botModules[0] ? JSON.stringify(botModules[0]).substring(0, 200) : 'none'
+    });
 
     // Map to simplified structure with module name and image info
     const moduleInfo = botModules.map((module: any) => {
