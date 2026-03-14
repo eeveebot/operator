@@ -127,6 +127,22 @@ router.get('/bot-modules', async (req: Request, res: Response) => {
         plural: 'botmodules',
       });
 
+    // Log the raw response for debugging
+    log.debug('Raw botModulesResponse:', { 
+      body: botModulesResponse.body,
+      statusCode: botModulesResponse.response.statusCode,
+      headers: botModulesResponse.response.headers
+    });
+
+    // Check if response body exists and has items
+    if (!botModulesResponse || !botModulesResponse.body) {
+      log.error('Empty or invalid botModulesResponse received');
+      return res.status(500).json({
+        error: 'Failed to fetch bot modules',
+        details: 'Empty response from Kubernetes API',
+      });
+    }
+
     // Extract the items from the response
     const botModules = (botModulesResponse.body as any).items || [];
 
