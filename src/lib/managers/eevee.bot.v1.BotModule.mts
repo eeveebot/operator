@@ -419,13 +419,33 @@ async function createModuleDeployment(
 
     // Create the PVC
     try {
+      // Ensure the PVC spec has the required resources.storage field
+      const pvcSpec = item.spec.persistentVolumeClaim;
+      if (pvcSpec && !pvcSpec.resources) {
+        pvcSpec.resources = {
+          requests: {
+            storage: '1Gi', // Default storage size if not specified
+          },
+        };
+      } else if (
+        pvcSpec &&
+        pvcSpec.resources &&
+        !pvcSpec.resources.requests?.storage
+      ) {
+        // If resources exists but storage is not specified, add default
+        pvcSpec.resources.requests = {
+          ...pvcSpec.resources.requests,
+          storage: '1Gi',
+        };
+      }
+
       await coreV1Api.createNamespacedPersistentVolumeClaim({
         namespace: namespace,
         body: {
           metadata: {
             name: `${deploymentName}-pvc`,
           },
-          spec: item.spec.persistentVolumeClaim,
+          spec: pvcSpec,
         },
       });
       log.info(`Created PVC ${deploymentName}-pvc in namespace ${namespace}`);
