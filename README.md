@@ -1,18 +1,17 @@
 # eevee Operator
 
-hello operator, can you give me number nine
+> Kubernetes operator that manages BotModule and IpcConfig resources for the eevee chatbot ecosystem.
 
 ## Overview
 
-This operator manages three custom resource types:
+This operator manages two custom resource types:
 
-1. **ChatConnectionIrc** - Manages IRC chat connections
-2. **IpcConfig** - Manages inter-process communication configurations
-3. **Toolbox** - Manages toolbox configurations
+1. **BotModule** - Deploys and manages all eevee modules (connectors, plugins, router, toolbox)
+2. **IpcConfig** - Manages NATS inter-process communication infrastructure
 
-For each custom resource created in the cluster, the operator creates and maintains the necessary Kubernetes deployments to run the corresponding eevee components.
+For each BotModule resource, the operator creates and maintains a Kubernetes Deployment, ConfigMap (for module configuration), and optional PersistentVolumeClaim. For each IpcConfig resource, the operator deploys and manages a NATS server with authentication.
 
-## Installation
+## Install
 
 The eevee Operator is installed using Helm. The chart is hosted in our custom repository.
 
@@ -30,7 +29,7 @@ The eevee Operator is installed using Helm. The chart is hosted in our custom re
    helm repo update
    ```
 
-2. Install the crds and operator:
+2. Install the CRDs and operator:
 
    ```bash
    helm install eevee-crds eevee/crds --namespace eevee-bot
@@ -75,10 +74,13 @@ Updates the core eevee libraries to their latest versions.
 
 ## Environment Variables
 
-The operator supports the following environment variables:
-
-- `NAMESPACE` - The namespace the operator should watch (default: "eevee-bot")
-- `WATCH_OTHER_NAMESPACES` - Whether to watch resources in namespaces other than the operator's namespace (default: "false")
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NAMESPACE` | `eevee-bot` | The namespace the operator should watch |
+| `WATCH_OTHER_NAMESPACES` | `false` | Watch resources in namespaces other than the operator's namespace |
+| `KUBE_IN_CLUSTER_CONFIG` | `false` | Use in-cluster Kubernetes configuration |
+| `HTTP_API_PORT` | `9000` | Port for the HTTP API server |
+| `EEVEE_OPERATOR_API_TOKEN` | *(none)* | Bearer token for authenticated API endpoints |
 
 ## Helpful Commands
 
@@ -94,6 +96,10 @@ npm run build
 npm run dev
 ```
 
+## Contributing
+
+Contributions are welcome! Please see the [eevee contributing guide](https://github.com/eeveebot/eevee) for details.
+
 ## License
 
-This project is licensed under the Attribution-NonCommercial-ShareAlike 4.0 International License.
+[CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) — see [LICENSE](./LICENSE) for the full text.
