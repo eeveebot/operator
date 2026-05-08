@@ -82,6 +82,22 @@ Updates the core eevee libraries to their latest versions.
 | `HTTP_API_PORT` | `9000` | Port for the HTTP API server |
 | `EEVEE_OPERATOR_API_TOKEN` | *(none)* | Bearer token for authenticated API endpoints |
 
+## How It Works
+
+### Health Probes
+
+The operator automatically sets default health probes on module pods:
+
+- **Liveness probe:** HTTP GET `/health` on the module's `metricsPort`, with `initialDelaySeconds: 10` and `periodSeconds: 30`
+- **Readiness probe:** HTTP GET `/health` on the module's `metricsPort`, with `initialDelaySeconds: 5` and `periodSeconds: 10`
+- **Startup probe:** None (modules typically start quickly)
+
+Modules use `setupHttpServer({ natsClients })` from `@eeveebot/libeevee` to wire the `/health` endpoint to NATS connectivity checks. When NATS is disconnected, `/health` returns 503, causing the readiness probe to fail and eventually triggering a liveness restart.
+
+Custom probes can be specified via `livenessProbe`, `readinessProbe`, and `startupProbe` fields in the BotModule spec. These accept standard Kubernetes `V1Probe` objects and override the defaults entirely.
+
+If a module has `metrics: false`, no default probes are set.
+
 ## Helpful Commands
 
 ### Run build
