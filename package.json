@@ -1,6 +1,6 @@
 {
   "name": "@eeveebot/operator",
-  "version": "2.2.20",
+  "version": "2.2.21",
   "description": "the eevee operator",
   "keywords": [
     "eevee"
@@ -27,7 +27,7 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@eeveebot/crds": "^2.4.3",
+    "@eeveebot/crds": "^2.5.1",
     "@thehonker/k8s-operator": "^3.1.1-alpha.9",
     "express": "^5.2.1",
     "prom-client": "^15.1.3",
