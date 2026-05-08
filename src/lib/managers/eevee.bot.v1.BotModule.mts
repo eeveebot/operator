@@ -403,6 +403,13 @@ async function createModuleDeployment(
       name: 'METRICS_PORT',
       value: metricsPort.toString(),
     });
+
+    // Set HTTP_API_PORT to match metricsPort so the health and metrics
+    // endpoints are served on the port that probes target
+    containerEnvVars.push({
+      name: 'HTTP_API_PORT',
+      value: metricsPort.toString(),
+    });
   }
 
   log.debug('Creating deployment object');
@@ -812,6 +819,26 @@ async function updateModuleDeployment(
               containerPort: metricsPort,
               protocol: 'TCP',
             });
+          }
+
+          // Set HTTP_API_PORT to match metricsPort so the health and metrics
+          // endpoints are served on the port that probes target
+          const hasHttpApiPort = container.env?.some(
+            (env: K8s.V1EnvVar) => env.name === 'HTTP_API_PORT'
+          );
+          if (!hasHttpApiPort) {
+            container.env = container.env || [];
+            container.env.push({
+              name: 'HTTP_API_PORT',
+              value: metricsPort.toString(),
+            });
+          } else {
+            const httpApiPortEnv = container.env?.find(
+              (env: K8s.V1EnvVar) => env.name === 'HTTP_API_PORT'
+            );
+            if (httpApiPortEnv) {
+              httpApiPortEnv.value = metricsPort.toString();
+            }
           }
         } else {
           // Remove metrics port if present
