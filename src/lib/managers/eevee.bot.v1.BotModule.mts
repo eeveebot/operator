@@ -572,6 +572,21 @@ async function createModuleDeployment(
               envFrom: containerEnvFrom,
               ports: containerPorts,
               volumeMounts: volumeMounts,
+              livenessProbe: item.spec?.livenessProbe || {
+                httpGet: { path: '/health', port: metricsPort || 9000 },
+                initialDelaySeconds: 10,
+                periodSeconds: 30,
+                timeoutSeconds: 5,
+                failureThreshold: 3,
+              },
+              readinessProbe: item.spec?.readinessProbe || {
+                httpGet: { path: '/health', port: metricsPort || 9000 },
+                initialDelaySeconds: 5,
+                periodSeconds: 10,
+                timeoutSeconds: 3,
+                failureThreshold: 3,
+              },
+              startupProbe: item.spec?.startupProbe,
             },
           ],
         },
@@ -806,6 +821,23 @@ async function updateModuleDeployment(
             );
           }
         }
+
+        // Update probes
+        container.livenessProbe = item.spec?.livenessProbe || {
+          httpGet: { path: '/health', port: metricsPort || 9000 },
+          initialDelaySeconds: 10,
+          periodSeconds: 30,
+          timeoutSeconds: 5,
+          failureThreshold: 3,
+        };
+        container.readinessProbe = item.spec?.readinessProbe || {
+          httpGet: { path: '/health', port: metricsPort || 9000 },
+          initialDelaySeconds: 5,
+          periodSeconds: 10,
+          timeoutSeconds: 3,
+          failureThreshold: 3,
+        };
+        container.startupProbe = item.spec?.startupProbe;
       }
 
       // Update the deployment
