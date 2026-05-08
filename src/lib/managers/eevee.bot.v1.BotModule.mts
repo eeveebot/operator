@@ -224,7 +224,7 @@ async function createModuleDeployment(
   // Get configuration from the BotModule spec
   let moduleImage = 'ghcr.io/eeveebot/module:latest';
   let metricsEnabled = false;
-  let metricsPort = 8080;
+  let metricsPort = 9000;
   let size = 1;
   const pullPolicy: K8s.V1Container['imagePullPolicy'] = 'Always';
   let volumeMountPath = '/data';
@@ -655,7 +655,7 @@ async function updateModuleDeployment(
   // Get configuration from the BotModule spec
   let moduleImage = 'ghcr.io/eeveebot/module:latest';
   let metricsEnabled = false;
-  let metricsPort = 8080;
+  let metricsPort = 9000;
   let size = 1;
   const pullPolicy: K8s.V1Container['imagePullPolicy'] = 'Always';
   let volumeMountPath = '/data';
