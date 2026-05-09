@@ -374,6 +374,26 @@ async function reconcileResource(
     });
 
     log.debug('BackupSchedule reconciliation completed successfully');
+
+    // Set the reconcile-last annotation to record when reconciliation completed
+    try {
+      await customObjectsApi.patchNamespacedCustomObject({
+        group: eevee.BackupSchedule.details.group,
+        version: eevee.BackupSchedule.details.version,
+        namespace: namespace,
+        plural: eevee.BackupSchedule.details.plural,
+        name: name,
+        body: {
+          metadata: {
+            annotations: {
+              'eevee.bot/reconcile-last': new Date().toISOString(),
+            },
+          },
+        },
+      });
+    } catch (error) {
+      log.debug('Failed to set reconcile-last annotation:', error);
+    }
   } catch (error) {
     log.error('Error during backupschedule reconciliation:', error);
   }

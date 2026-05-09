@@ -103,7 +103,52 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
         );
       }
       log.debug('Completed processing of BotModule resource deletion');
-      // No reconciliation needed for deletions
+
+      // Trigger reconciliation of all BackupSchedules in the namespace
+      // so they clean up CronJobs for this deleted botmodule
+      if (event.meta.namespace) {
+        try {
+          const customObjectsApi = kc.makeApiClient(K8s.CustomObjectsApi);
+          const schedulesResponse = await customObjectsApi.listNamespacedCustomObject({
+            group: eevee.BackupSchedule.details.group,
+            version: eevee.BackupSchedule.details.version,
+            namespace: event.meta.namespace,
+            plural: eevee.BackupSchedule.details.plural,
+          });
+          const schedules = (schedulesResponse as { items: eevee.BackupSchedule.backupscheduleResource[] }).items;
+          for (const schedule of schedules) {
+            const scheduleName = schedule.metadata?.name;
+            if (scheduleName) {
+              try {
+                await customObjectsApi.patchNamespacedCustomObject({
+                  group: eevee.BackupSchedule.details.group,
+                  version: eevee.BackupSchedule.details.version,
+                  namespace: event.meta.namespace,
+                  plural: eevee.BackupSchedule.details.plural,
+                  name: scheduleName,
+                  body: {
+                    metadata: {
+                      annotations: {
+                        'eevee.bot/reconcile-requested': new Date().toISOString(),
+                      },
+                    },
+                  },
+                });
+                log.debug(
+                  `Triggered reconciliation of BackupSchedule "${scheduleName}" after BotModule deletion`
+                );
+              } catch (error) {
+                log.warn(
+                  `Failed to trigger reconciliation of BackupSchedule "${scheduleName}":`,
+                  error
+                );
+              }
+            }
+          }
+        } catch (error) {
+          log.warn('Failed to list BackupSchedules for deletion trigger:', error);
+        }
+      }
       break;
   }
 }
@@ -259,7 +304,7 @@ async function reconcileResource(
 
     // Validate backupSchedule reference if set
     if (item.spec?.backupSchedule) {
-      await validateBackupScheduleRef(customObjectsApi, namespace, name, item);
+      await validateAndTriggerBackupScheduleReconcile(customObjectsApi, namespace, name, item);
     }
 
     log.debug('BotModule reconciliation completed successfully');
@@ -1002,10 +1047,10 @@ async function updateModuleDeployment(
 }
 
 /**
- * Validate that the backupSchedule reference exists.
- * This is a lightweight check — the BackupSchedule manager owns the CronJob.
+ * Validate the backupSchedule reference and trigger reconciliation
+ * of the referenced BackupSchedule by patching its annotations.
  */
-async function validateBackupScheduleRef(
+async function validateAndTriggerBackupScheduleReconcile(
   customObjectsApi: K8s.CustomObjectsApi,
   namespace: string,
   moduleName: string,
@@ -1017,6 +1062,7 @@ async function validateBackupScheduleRef(
   }
 
   try {
+    // Verify the schedule exists
     await customObjectsApi.getNamespacedCustomObject({
       group: eevee.BackupSchedule.details.group,
       version: eevee.BackupSchedule.details.version,
@@ -1026,6 +1072,25 @@ async function validateBackupScheduleRef(
     });
     log.debug(
       `BackupSchedule "${scheduleName}" reference validated for BotModule "${moduleName}"`
+    );
+
+    // Trigger reconciliation by setting the reconcile-requested annotation
+    await customObjectsApi.patchNamespacedCustomObject({
+      group: eevee.BackupSchedule.details.group,
+      version: eevee.BackupSchedule.details.version,
+      namespace: namespace,
+      plural: eevee.BackupSchedule.details.plural,
+      name: scheduleName,
+      body: {
+        metadata: {
+          annotations: {
+            'eevee.bot/reconcile-requested': new Date().toISOString(),
+          },
+        },
+      },
+    });
+    log.debug(
+      `Triggered reconciliation of BackupSchedule "${scheduleName}" via annotation`
     );
   } catch (error) {
     log.warn(
