@@ -167,6 +167,13 @@ async function reconcileResource(
       return;
     }
 
+    // Set status to Pending at the start of reconciliation
+    await updateBotModuleStatus(customObjectsApi, namespace, name, {
+      lastTransitionTime: new Date().toISOString(),
+      message: 'Reconciling',
+      reason: 'Pending',
+    });
+
     // Generate deployment name based on botmodule custom resource object name
     const deploymentName = `eevee-${name}-module`;
     const pvcName = `${deploymentName}-pvc`;
@@ -190,7 +197,16 @@ async function reconcileResource(
       );
 
       // Update the deployment if it exists
-      await updateModuleDeployment(appsV1Api, namespace, name, item);
+      await updateModuleDeployment(appsV1Api, customObjectsApi, namespace, name, item);
+
+      // Check deployment health and set status accordingly
+      await updateBotModuleStatusFromDeployment(
+        appsV1Api,
+        customObjectsApi,
+        namespace,
+        name,
+        deploymentName
+      );
 
       // If bootstrapFromBackup is set and PVC exists, proactively mark it bootstrapped.
       // A running deployment with data means the PVC is already populated.
@@ -223,6 +239,13 @@ async function reconcileResource(
         `Creating deployment ${deploymentName} in namespace ${namespace}`
       );
       await createModuleDeployment(appsV1Api, coreV1Api, namespace, name, item);
+
+      // Set status to Creating — deployment was just created, may not be ready yet
+      await updateBotModuleStatus(customObjectsApi, namespace, name, {
+        lastTransitionTime: new Date().toISOString(),
+        message: 'Deployment created',
+        reason: 'Creating',
+      });
     }
 
     // Validate backupSchedule reference if set
@@ -626,6 +649,7 @@ async function createModuleDeployment(
 
 async function updateModuleDeployment(
   appsV1Api: K8s.AppsV1Api,
+  customObjectsApi: K8s.CustomObjectsApi,
   namespace: string,
   moduleName: string,
   item: eevee.BotModule.botmoduleResource
@@ -651,6 +675,11 @@ async function updateModuleDeployment(
       // Ignore errors if deployment doesn't exist
       log.debug(`Deployment ${deploymentName} for disabled BotModule "${moduleName}" not found or already deleted`);
     }
+    await updateBotModuleStatus(customObjectsApi, namespace, moduleName, {
+      lastTransitionTime: new Date().toISOString(),
+      message: 'Module is disabled',
+      reason: 'Disabled',
+    });
     return;
   }
 
@@ -1189,6 +1218,11 @@ async function handleBootstrapFromBackup(
     log.info(
       `Creating bootstrap restore Job ${jobName} for BotModule "${moduleName}" (backup: ${backupId})`
     );
+    await updateBotModuleStatus(customObjectsApi, namespace, moduleName, {
+      lastTransitionTime: new Date().toISOString(),
+      message: `Restoring from backup ${backupId}`,
+      reason: 'Bootstrapping',
+    });
     await batchV1Api.createNamespacedJob({ namespace: namespace, body: job });
   } catch (error) {
     log.warn(
@@ -1489,6 +1523,62 @@ async function updateBotModuleStatus(
   } catch (error) {
     log.warn(
       `Failed to update status for BotModule "${name}" in namespace "${namespace}":`,
+      error
+    );
+  }
+}
+
+/**
+ * Read the deployment status and update the botmodule status accordingly.
+ * Ready if replicas are available, Unavailable if degraded.
+ */
+async function updateBotModuleStatusFromDeployment(
+  appsV1Api: K8s.AppsV1Api,
+  customObjectsApi: K8s.CustomObjectsApi,
+  namespace: string,
+  name: string,
+  deploymentName: string,
+): Promise<void> {
+  try {
+    const deployment = await appsV1Api.readNamespacedDeployment({
+      name: deploymentName,
+      namespace: namespace,
+    });
+
+    const replicas = deployment.status?.replicas || 0;
+    const available = deployment.status?.availableReplicas || 0;
+    const updated = deployment.status?.updatedReplicas || 0;
+    const unavailable = deployment.status?.unavailableReplicas || 0;
+
+    if (available > 0 && unavailable === 0) {
+      await updateBotModuleStatus(customObjectsApi, namespace, name, {
+        lastTransitionTime: new Date().toISOString(),
+        message: `Deployment ready (${available}/${replicas} replicas available)`,
+        reason: 'Ready',
+      });
+    } else if (unavailable > 0) {
+      await updateBotModuleStatus(customObjectsApi, namespace, name, {
+        lastTransitionTime: new Date().toISOString(),
+        message: `Deployment unavailable (${unavailable} unavailable replica(s), ${available} available)`,
+        reason: 'Unavailable',
+      });
+    } else if (replicas > 0 && available === 0) {
+      // Rolling out — no replicas available yet but not explicitly unavailable
+      await updateBotModuleStatus(customObjectsApi, namespace, name, {
+        lastTransitionTime: new Date().toISOString(),
+        message: `Deployment updating (${updated}/${replicas} updated)`,
+        reason: 'Updating',
+      });
+    } else {
+      await updateBotModuleStatus(customObjectsApi, namespace, name, {
+        lastTransitionTime: new Date().toISOString(),
+        message: 'Deployment exists',
+        reason: 'Ready',
+      });
+    }
+  } catch (error) {
+    log.warn(
+      `Failed to check deployment status for BotModule "${name}":`,
       error
     );
   }
