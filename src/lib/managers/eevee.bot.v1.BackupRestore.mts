@@ -152,6 +152,14 @@ async function reconcileResource(
       // Check job completion
       if (job.status?.succeeded) {
         log.info(`Restore Job "${jobName}" succeeded`);
+
+        // Set the bootstrapped annotation on the PVC — a restore is
+        // equivalent to a bootstrap. backuprestore ignores the annotation
+        // (it always runs), but on success we mark the PVC as populated
+        // so future bootstrapFromBackup checks skip correctly.
+        const pvcName = `eevee-${spec.botModule.name}-module-pvc`;
+        await ensureRestorePvcBootstrapped(coreV1Api, namespace, pvcName);
+
         await updateBackupRestoreStatus(customObjectsApi, namespace, name, {
           phase: 'Succeeded',
           jobName: jobName,
@@ -519,6 +527,39 @@ async function updateBackupRestoreStatus(
   } catch (error) {
     log.error(
       `Failed to update status for BackupRestore "${name}" in namespace "${namespace}":`,
+      error
+    );
+  }
+}
+
+/**
+ * Set the eevee.bot/bootstrapped annotation on a PVC after a successful restore.
+ * A restore is equivalent to a bootstrap — the PVC is now populated.
+ */
+async function ensureRestorePvcBootstrapped(
+  coreV1Api: K8s.CoreV1Api,
+  namespace: string,
+  pvcName: string,
+): Promise<void> {
+  try {
+    const pvc = await coreV1Api.readNamespacedPersistentVolumeClaim({
+      name: pvcName,
+      namespace: namespace,
+    });
+
+    pvc.metadata = pvc.metadata || {};
+    pvc.metadata.annotations = pvc.metadata.annotations || {};
+    pvc.metadata.annotations['eevee.bot/bootstrapped'] = 'true';
+
+    await coreV1Api.replaceNamespacedPersistentVolumeClaim({
+      name: pvcName,
+      namespace: namespace,
+      body: pvc,
+    });
+    log.debug(`Set bootstrapped annotation on PVC ${pvcName} after restore`);
+  } catch (error) {
+    log.debug(
+      `Could not set bootstrapped annotation on PVC ${pvcName}:`,
       error
     );
   }
