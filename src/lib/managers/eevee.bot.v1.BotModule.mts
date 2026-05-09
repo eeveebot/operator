@@ -185,6 +185,13 @@ async function reconcileResource(
 
       // Update the deployment if it exists
       await updateModuleDeployment(appsV1Api, namespace, name, item);
+
+      // If bootstrapFromBackup is set and PVC exists, proactively mark it bootstrapped.
+      // A running deployment with data means the PVC is already populated.
+      if (item.spec?.bootstrapFromBackup && item.metadata?.name) {
+        const pvcName = `eevee-${item.metadata.name}-data`;
+        await ensurePvcBootstrappedAnnotation(coreV1Api, namespace, pvcName);
+      }
     } catch {
       // Deployment doesn't exist, create it
       // If bootstrapFromBackup is set, run restore first
@@ -1029,11 +1036,18 @@ async function handleBootstrapFromBackup(
     return true;
   }
 
-  // Check if already bootstrapped via annotation
-  const annotations = (item.metadata?.annotations || {}) as Record<string, string>;
-  if (annotations['eevee.bot/bootstrapped'] === 'true') {
+  const coreV1Api = kc.makeApiClient(K8s.CoreV1Api);
+
+  // Check if PVC is already bootstrapped via annotation
+  const pvcName = `eevee-${item.metadata?.name}-data`;
+  const isBootstrapped = await checkPvcBootstrappedAnnotation(
+    coreV1Api,
+    namespace,
+    pvcName
+  );
+  if (isBootstrapped) {
     log.debug(
-      `BotModule "${moduleName}" is already bootstrapped — skipping restore`
+      `PVC ${pvcName} is already bootstrapped — skipping restore for BotModule "${moduleName}"`
     );
     return true;
   }
@@ -1074,7 +1088,6 @@ async function handleBootstrapFromBackup(
   }
 
   // Find the latest backup via S3 listing
-  const coreV1Api = kc.makeApiClient(K8s.CoreV1Api);
   const accessId = await resolveBootstrapSecretKey(
     coreV1Api,
     namespace,
@@ -1120,7 +1133,6 @@ async function handleBootstrapFromBackup(
   const batchV1Api = kc.makeApiClient(K8s.BatchV1Api);
   const jobName = `eevee-${moduleName}-bootstrap-restore`;
   const volumeMountPath = item.spec?.volumeMountPath || '/data';
-  const pvcName = `eevee-${item.metadata?.name}-data`;
 
   const envVars: K8s.V1EnvVar[] = [
     { name: 'S3_ENDPOINT', value: s3StoreSpec.endpoint },
@@ -1225,11 +1237,11 @@ async function handleBootstrapFromBackup(
           `Bootstrap restore Job succeeded for BotModule "${moduleName}"`
         );
 
-        // Set the bootstrapped annotation on the botmodule CR
-        await setBootstrappedAnnotation(
-          customObjectsApi,
+        // Set the bootstrapped annotation on the PVC
+        await ensurePvcBootstrappedAnnotation(
+          coreV1Api,
           namespace,
-          item.metadata?.name!,
+          pvcName,
         );
 
         // Clean up the Job
@@ -1356,32 +1368,61 @@ async function findLatestBackupForModule(
 }
 
 /**
- * Set the eevee.bot/bootstrapped annotation on a botmodule CR.
+ * Check if a PVC has the eevee.bot/bootstrapped annotation set to "true".
  */
-async function setBootstrappedAnnotation(
-  customObjectsApi: K8s.CustomObjectsApi,
+async function checkPvcBootstrappedAnnotation(
+  coreV1Api: K8s.CoreV1Api,
   namespace: string,
-  name: string,
+  pvcName: string,
+): Promise<boolean> {
+  try {
+    const pvc = await coreV1Api.readNamespacedPersistentVolumeClaim({
+      name: pvcName,
+      namespace: namespace,
+    });
+    const annotations = pvc.metadata?.annotations || {};
+    return annotations['eevee.bot/bootstrapped'] === 'true';
+  } catch (error) {
+    // PVC doesn't exist yet — not bootstrapped
+    log.debug(`PVC ${pvcName} not found when checking bootstrapped annotation`);
+    return false;
+  }
+}
+
+/**
+ * Set the eevee.bot/bootstrapped annotation on a PVC.
+ * If the PVC doesn't exist, silently skip (it will be created by the
+ * deployment and annotated on the next reconciliation).
+ */
+async function ensurePvcBootstrappedAnnotation(
+  coreV1Api: K8s.CoreV1Api,
+  namespace: string,
+  pvcName: string,
 ): Promise<void> {
   try {
-    await customObjectsApi.patchNamespacedCustomObject({
-      group: eevee.BotModule.details.group,
-      version: eevee.BotModule.details.version,
+    const pvc = await coreV1Api.readNamespacedPersistentVolumeClaim({
+      name: pvcName,
       namespace: namespace,
-      plural: eevee.BotModule.details.plural,
-      name: name,
-      body: {
-        metadata: {
-          annotations: {
-            'eevee.bot/bootstrapped': 'true',
-          },
-        },
-      },
     });
-    log.debug(`Set bootstrapped annotation on BotModule "${name}"`);
+
+    // Already annotated
+    if (pvc.metadata?.annotations?.['eevee.bot/bootstrapped'] === 'true') {
+      return;
+    }
+
+    pvc.metadata = pvc.metadata || {};
+    pvc.metadata.annotations = pvc.metadata.annotations || {};
+    pvc.metadata.annotations['eevee.bot/bootstrapped'] = 'true';
+
+    await coreV1Api.replaceNamespacedPersistentVolumeClaim({
+      name: pvcName,
+      namespace: namespace,
+      body: pvc,
+    });
+    log.debug(`Set bootstrapped annotation on PVC ${pvcName}`);
   } catch (error) {
-    log.warn(
-      `Failed to set bootstrapped annotation on BotModule "${name}":`,
+    log.debug(
+      `Could not set bootstrapped annotation on PVC ${pvcName} (may not exist yet):`,
       error
     );
   }
