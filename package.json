@@ -27,7 +27,8 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@eeveebot/crds": "^2.5.1",
+    "@aws-sdk/client-s3": "^3.1045.0",
+    "@eeveebot/crds": "^2.6.0",
     "@thehonker/k8s-operator": "^3.1.1-alpha.9",
     "express": "^5.2.1",
     "prom-client": "^15.1.3",
