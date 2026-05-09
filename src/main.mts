@@ -24,10 +24,16 @@ import { k8sActiveWatches } from './lib/metrics.mjs';
 
 import { managedCrds as IpcConfig } from './lib/managers/eevee.bot.v1.IpcConfig.mjs';
 import { managedCrds as BotModule } from './lib/managers/eevee.bot.v1.BotModule.mjs';
+import { managedCrds as S3Store } from './lib/managers/eevee.bot.v1.S3Store.mjs';
+import { managedCrds as BackupSchedule } from './lib/managers/eevee.bot.v1.BackupSchedule.mjs';
+import { managedCrds as BackupRestore } from './lib/managers/eevee.bot.v1.BackupRestore.mjs';
 
 const managedCrds: managedCrd[] = [];
 managedCrds.push(...IpcConfig);
 managedCrds.push(...BotModule);
+managedCrds.push(...S3Store);
+managedCrds.push(...BackupSchedule);
+managedCrds.push(...BackupRestore);
 
 // Get some runtime config from envvars
 // Namespace the operator lives in
