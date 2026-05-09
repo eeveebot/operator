@@ -1312,6 +1312,16 @@ async function handleBootstrapFromBackup(
     metadata: {
       name: jobName,
       namespace: namespace,
+      ownerReferences: [
+        {
+          apiVersion: `${eevee.BotModule.details.group}/${eevee.BotModule.details.version}`,
+          kind: 'botmodule',
+          name: moduleName,
+          uid: item.metadata?.uid!,
+          controller: true,
+          blockOwnerDeletion: true,
+        },
+      ],
     },
     spec: {
       template: {
