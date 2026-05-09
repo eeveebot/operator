@@ -183,8 +183,8 @@ async function reconcileResource(
           moduleName = bm.spec.moduleName || bm.metadata?.name;
           pvcSpec = bm.spec?.persistentVolumeClaim;
           volumeMountPath = bm.spec?.volumeMountPath || '/data';
-          // PVC name follows the operator convention: eevee-<cr-name>-data
-          pvcName = `eevee-${bm.metadata?.name}-data`;
+          // PVC name follows the operator convention: eevee-<cr-name>-module-pvc
+          pvcName = `eevee-${bm.metadata?.name}-module-pvc`;
           break;
         }
       }

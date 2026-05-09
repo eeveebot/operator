@@ -169,9 +169,15 @@ async function reconcileResource(
 
     // Generate deployment name based on botmodule custom resource object name
     const deploymentName = `eevee-${name}-module`;
+    const pvcName = `${deploymentName}-pvc`;
     log.debug(
       `Checking for deployment ${deploymentName} in namespace ${namespace}`
     );
+
+    // Ensure PVC exists before anything else (deployment, bootstrap restore, etc.)
+    if (item.spec?.persistentVolumeClaim) {
+      await ensurePvc(coreV1Api, namespace, pvcName, item.spec.persistentVolumeClaim);
+    }
 
     // Check if deployment exists
     try {
@@ -188,8 +194,7 @@ async function reconcileResource(
 
       // If bootstrapFromBackup is set and PVC exists, proactively mark it bootstrapped.
       // A running deployment with data means the PVC is already populated.
-      if (item.spec?.bootstrapFromBackup && item.metadata?.name) {
-        const pvcName = `eevee-${item.metadata.name}-data`;
+      if (item.spec?.bootstrapFromBackup) {
         await ensurePvcBootstrappedAnnotation(coreV1Api, namespace, pvcName);
       }
     } catch {
@@ -198,8 +203,10 @@ async function reconcileResource(
       if (item.spec?.bootstrapFromBackup) {
         const bootstrapped = await handleBootstrapFromBackup(
           customObjectsApi,
+          coreV1Api,
           namespace,
           name,
+          pvcName,
           item
         );
         if (!bootstrapped) {
@@ -465,42 +472,7 @@ async function createModuleDeployment(
       name: 'MODULE_DATA',
       value: volumeMountPath,
     });
-
-    // Create the PVC
-    try {
-      // Ensure the PVC spec has the required resources.storage field
-      const pvcSpec = item.spec.persistentVolumeClaim;
-      if (pvcSpec && !pvcSpec.resources) {
-        pvcSpec.resources = {
-          requests: {
-            storage: '1Gi', // Default storage size if not specified
-          },
-        };
-      } else if (
-        pvcSpec &&
-        pvcSpec.resources &&
-        !pvcSpec.resources.requests?.storage
-      ) {
-        // If resources exists but storage is not specified, add default
-        pvcSpec.resources.requests = {
-          ...pvcSpec.resources.requests,
-          storage: '1Gi',
-        };
-      }
-
-      await coreV1Api.createNamespacedPersistentVolumeClaim({
-        namespace: namespace,
-        body: {
-          metadata: {
-            name: `${deploymentName}-pvc`,
-          },
-          spec: pvcSpec,
-        },
-      });
-      log.info(`Created PVC ${deploymentName}-pvc in namespace ${namespace}`);
-    } catch (error) {
-      log.warn(`Failed to create PVC ${deploymentName}-pvc:`, error);
-    }
+    // PVC is now created in the reconciler before this function is called
   }
 
   // Handle moduleConfig if provided
@@ -1027,8 +999,10 @@ async function validateBackupScheduleRef(
  */
 async function handleBootstrapFromBackup(
   customObjectsApi: K8s.CustomObjectsApi,
+  coreV1Api: K8s.CoreV1Api,
   namespace: string,
   moduleName: string,
+  pvcName: string,
   item: eevee.BotModule.botmoduleResource
 ): Promise<boolean> {
   const bootstrapConfig = item.spec?.bootstrapFromBackup;
@@ -1036,10 +1010,7 @@ async function handleBootstrapFromBackup(
     return true;
   }
 
-  const coreV1Api = kc.makeApiClient(K8s.CoreV1Api);
-
   // Check if PVC is already bootstrapped via annotation
-  const pvcName = `eevee-${item.metadata?.name}-data`;
   const isBootstrapped = await checkPvcBootstrappedAnnotation(
     coreV1Api,
     namespace,
@@ -1364,6 +1335,56 @@ async function findLatestBackupForModule(
   } catch (error) {
     log.warn('Failed to list S3 objects for bootstrap:', error);
     return undefined;
+  }
+}
+
+/**
+ * Ensure a PVC exists for the module. Creates it if it doesn't already exist.
+ * This is called from the reconciler before deployment creation or bootstrap restore,
+ * so the PVC is guaranteed to exist before any pod tries to mount it.
+ */
+async function ensurePvc(
+  coreV1Api: K8s.CoreV1Api,
+  namespace: string,
+  pvcName: string,
+  pvcSpec: K8s.V1PersistentVolumeClaimSpec,
+): Promise<void> {
+  try {
+    await coreV1Api.readNamespacedPersistentVolumeClaim({
+      name: pvcName,
+      namespace: namespace,
+    });
+    log.debug(`PVC ${pvcName} already exists in namespace ${namespace}`);
+  } catch {
+    // PVC doesn't exist — create it
+    // Ensure the spec has the required resources.storage field
+    if (!pvcSpec.resources) {
+      pvcSpec.resources = {
+        requests: {
+          storage: '1Gi',
+        },
+      };
+    } else if (!pvcSpec.resources.requests?.storage) {
+      pvcSpec.resources.requests = {
+        ...pvcSpec.resources.requests,
+        storage: '1Gi',
+      };
+    }
+
+    try {
+      await coreV1Api.createNamespacedPersistentVolumeClaim({
+        namespace: namespace,
+        body: {
+          metadata: {
+            name: pvcName,
+          },
+          spec: pvcSpec,
+        },
+      });
+      log.info(`Created PVC ${pvcName} in namespace ${namespace}`);
+    } catch (error) {
+      log.warn(`Failed to create PVC ${pvcName}:`, error);
+    }
   }
 }
 

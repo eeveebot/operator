@@ -198,7 +198,7 @@ async function reconcileResource(
       const botModuleItem = botModuleResponse as eevee.BotModule.botmoduleResource;
       moduleName = botModuleItem.spec?.moduleName || botModuleItem.metadata?.name;
       volumeMountPath = botModuleItem.spec?.volumeMountPath || '/data';
-      pvcName = `eevee-${botModuleItem.metadata?.name}-data`;
+      pvcName = `eevee-${botModuleItem.metadata?.name}-module-pvc`;
     } catch (error) {
       log.warn(`Failed to resolve botmodule "${botModuleName}" for BackupRestore "${name}":`, error);
       return;
