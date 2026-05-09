@@ -104,49 +104,60 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
       }
       log.debug('Completed processing of BotModule resource deletion');
 
-      // Trigger reconciliation of all BackupSchedules in the namespace
-      // so they clean up CronJobs for this deleted botmodule
+      // Trigger reconciliation of BackupSchedules that were targeting this botmodule.
+      // Since the botmodule CR is deleted, we can't read its spec. Instead,
+      // find CronJobs matching the naming pattern (<schedule>-<botmodule>-backup)
+      // and trace to their owning schedule via ownerReferences.
       if (event.meta.namespace) {
         try {
+          const batchV1Api = kc.makeApiClient(K8s.BatchV1Api);
           const customObjectsApi = kc.makeApiClient(K8s.CustomObjectsApi);
-          const schedulesResponse = await customObjectsApi.listNamespacedCustomObject({
-            group: eevee.BackupSchedule.details.group,
-            version: eevee.BackupSchedule.details.version,
+          const cronJobsResponse = await batchV1Api.listNamespacedCronJob({
             namespace: event.meta.namespace,
-            plural: eevee.BackupSchedule.details.plural,
           });
-          const schedules = (schedulesResponse as { items: eevee.BackupSchedule.backupscheduleResource[] }).items;
-          for (const schedule of schedules) {
-            const scheduleName = schedule.metadata?.name;
-            if (scheduleName) {
-              try {
-                await customObjectsApi.patchNamespacedCustomObject({
-                  group: eevee.BackupSchedule.details.group,
-                  version: eevee.BackupSchedule.details.version,
-                  namespace: event.meta.namespace,
-                  plural: eevee.BackupSchedule.details.plural,
-                  name: scheduleName,
-                  body: {
-                    metadata: {
-                      annotations: {
-                        'eevee.bot/reconcile-requested': new Date().toISOString(),
-                      },
-                    },
-                  },
-                });
-                log.debug(
-                  `Triggered reconciliation of BackupSchedule "${scheduleName}" after BotModule deletion`
-                );
-              } catch (error) {
-                log.warn(
-                  `Failed to trigger reconciliation of BackupSchedule "${scheduleName}":`,
-                  error
-                );
+          const cronJobs = cronJobsResponse.items || [];
+          const scheduleNamesToTrigger = new Set<string>();
+
+          for (const cj of cronJobs) {
+            const cjName = cj.metadata?.name || '';
+            // CronJob names follow: <schedule-name>-<botmodule-cr-name>-backup
+            if (cjName.endsWith(`-${event.meta.name}-backup`)) {
+              // Find the owning BackupSchedule via ownerReferences
+              const ownerRef = cj.metadata?.ownerReferences?.[0];
+              if (ownerRef) {
+                scheduleNamesToTrigger.add(ownerRef.name);
               }
             }
           }
+
+          for (const scheduleName of scheduleNamesToTrigger) {
+            try {
+              await customObjectsApi.patchNamespacedCustomObject({
+                group: eevee.BackupSchedule.details.group,
+                version: eevee.BackupSchedule.details.version,
+                namespace: event.meta.namespace,
+                plural: eevee.BackupSchedule.details.plural,
+                name: scheduleName,
+                body: {
+                  metadata: {
+                    annotations: {
+                      'eevee.bot/reconcile-requested': new Date().toISOString(),
+                    },
+                  },
+                },
+              });
+              log.debug(
+                `Triggered reconciliation of BackupSchedule "${scheduleName}" after BotModule deletion`
+              );
+            } catch (error) {
+              log.warn(
+                `Failed to trigger reconciliation of BackupSchedule "${scheduleName}":`,
+                error
+              );
+            }
+          }
         } catch (error) {
-          log.warn('Failed to list BackupSchedules for deletion trigger:', error);
+          log.warn('Failed to find CronJobs for deletion trigger:', error);
         }
       }
       break;
@@ -1057,6 +1068,31 @@ async function validateAndTriggerBackupScheduleReconcile(
   item: eevee.BotModule.botmoduleResource
 ): Promise<void> {
   const scheduleName = item.spec?.backupSchedule?.name;
+
+  // Set or clear the backup-schedule label on the botmodule
+  const currentLabel = item.metadata?.labels?.['eevee.bot/backup-schedule'];
+  const desiredLabel = scheduleName || null;
+  if (currentLabel !== desiredLabel) {
+    try {
+      await customObjectsApi.patchNamespacedCustomObject({
+        group: eevee.BotModule.details.group,
+        version: eevee.BotModule.details.version,
+        namespace: namespace,
+        plural: eevee.BotModule.details.plural,
+        name: moduleName,
+        body: {
+          metadata: {
+            labels: scheduleName
+              ? { 'eevee.bot/backup-schedule': scheduleName }
+              : { 'eevee.bot/backup-schedule': null },
+          },
+        },
+      });
+    } catch (error) {
+      log.debug('Failed to update backup-schedule label on botmodule:', error);
+    }
+  }
+
   if (!scheduleName) {
     return;
   }
