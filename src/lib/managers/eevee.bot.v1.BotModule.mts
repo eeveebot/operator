@@ -187,10 +187,31 @@ async function reconcileResource(
       await updateModuleDeployment(appsV1Api, namespace, name, item);
     } catch {
       // Deployment doesn't exist, create it
+      // If bootstrapFromBackup is set, run restore first
+      if (item.spec?.bootstrapFromBackup) {
+        const bootstrapped = await handleBootstrapFromBackup(
+          customObjectsApi,
+          namespace,
+          name,
+          item
+        );
+        if (!bootstrapped) {
+          log.warn(
+            `Bootstrap restore failed for BotModule "${name}" — skipping deployment creation`
+          );
+          return;
+        }
+      }
+
       log.info(
         `Creating deployment ${deploymentName} in namespace ${namespace}`
       );
       await createModuleDeployment(appsV1Api, coreV1Api, namespace, name, item);
+    }
+
+    // Validate backupSchedule reference if set
+    if (item.spec?.backupSchedule) {
+      await validateBackupScheduleRef(customObjectsApi, namespace, name, item);
     }
 
     log.debug('BotModule reconciliation completed successfully');
@@ -954,5 +975,414 @@ async function updateModuleDeployment(
     }
   } catch (error) {
     log.warn('Failed to process moduleConfig update:', error);
+  }
+}
+
+/**
+ * Validate that the backupSchedule reference exists.
+ * This is a lightweight check — the BackupSchedule manager owns the CronJob.
+ */
+async function validateBackupScheduleRef(
+  customObjectsApi: K8s.CustomObjectsApi,
+  namespace: string,
+  moduleName: string,
+  item: eevee.BotModule.botmoduleResource
+): Promise<void> {
+  const scheduleName = item.spec?.backupSchedule?.name;
+  if (!scheduleName) {
+    return;
+  }
+
+  try {
+    await customObjectsApi.getNamespacedCustomObject({
+      group: eevee.BackupSchedule.details.group,
+      version: eevee.BackupSchedule.details.version,
+      namespace: namespace,
+      plural: eevee.BackupSchedule.details.plural,
+      name: scheduleName,
+    });
+    log.debug(
+      `BackupSchedule "${scheduleName}" reference validated for BotModule "${moduleName}"`
+    );
+  } catch (error) {
+    log.warn(
+      `BackupSchedule "${scheduleName}" referenced by BotModule "${moduleName}" not found in namespace ${namespace}`
+    );
+  }
+}
+
+/**
+ * Handle bootstrapFromBackup: restore the latest backup from S3 before
+ * creating the deployment for the first time.
+ *
+ * Returns true if bootstrapped (or already bootstrapped), false on failure.
+ * The operator tracks bootstrapped state via an annotation on the botmodule CR.
+ */
+async function handleBootstrapFromBackup(
+  customObjectsApi: K8s.CustomObjectsApi,
+  namespace: string,
+  moduleName: string,
+  item: eevee.BotModule.botmoduleResource
+): Promise<boolean> {
+  const bootstrapConfig = item.spec?.bootstrapFromBackup;
+  if (!bootstrapConfig) {
+    return true;
+  }
+
+  // Check if already bootstrapped via annotation
+  const annotations = (item.metadata?.annotations || {}) as Record<string, string>;
+  if (annotations['eevee.bot/bootstrapped'] === 'true') {
+    log.debug(
+      `BotModule "${moduleName}" is already bootstrapped — skipping restore`
+    );
+    return true;
+  }
+
+  const s3StoreName = bootstrapConfig.s3Store?.name;
+  const restoreImage = bootstrapConfig.image;
+
+  if (!s3StoreName || !restoreImage) {
+    log.warn(
+      `BotModule "${moduleName}" has incomplete bootstrapFromBackup config (missing s3Store name or image)`
+    );
+    return false;
+  }
+
+  // Resolve the s3store
+  let s3StoreSpec: eevee.S3Store.s3storeSpec | undefined;
+  try {
+    const s3StoreResponse = await customObjectsApi.getNamespacedCustomObject({
+      group: eevee.S3Store.details.group,
+      version: eevee.S3Store.details.version,
+      namespace: namespace,
+      plural: eevee.S3Store.details.plural,
+      name: s3StoreName,
+    });
+    const s3StoreItem = s3StoreResponse as eevee.S3Store.s3storeResource;
+    s3StoreSpec = s3StoreItem.spec;
+  } catch (error) {
+    log.warn(
+      `Failed to resolve s3store "${s3StoreName}" for bootstrap restore of BotModule "${moduleName}":`,
+      error
+    );
+    return false;
+  }
+
+  if (!s3StoreSpec) {
+    log.warn(`s3store "${s3StoreName}" has no spec`);
+    return false;
+  }
+
+  // Find the latest backup via S3 listing
+  const coreV1Api = kc.makeApiClient(K8s.CoreV1Api);
+  const accessId = await resolveBootstrapSecretKey(
+    coreV1Api,
+    namespace,
+    s3StoreSpec.accessId?.secretKeyRef?.secret?.name!,
+    s3StoreSpec.accessId?.secretKeyRef?.secret?.namespace || namespace,
+    s3StoreSpec.accessId?.secretKeyRef?.key!
+  );
+  const secretKey = await resolveBootstrapSecretKey(
+    coreV1Api,
+    namespace,
+    s3StoreSpec.accessKey?.secretKeyRef?.secret?.name!,
+    s3StoreSpec.accessKey?.secretKeyRef?.secret?.namespace || namespace,
+    s3StoreSpec.accessKey?.secretKeyRef?.key!
+  );
+
+  if (!accessId || !secretKey) {
+    log.warn(
+      `Cannot resolve S3 credentials for bootstrap restore of BotModule "${moduleName}"`
+    );
+    return false;
+  }
+
+  const botModuleName = item.spec?.moduleName || moduleName;
+  const backupId = await findLatestBackupForModule(
+    s3StoreSpec.endpoint,
+    accessId,
+    secretKey,
+    s3StoreSpec.bucket,
+    s3StoreSpec.prefix || '',
+    namespace,
+    botModuleName,
+    s3StoreSpec.pathStyle || false
+  );
+
+  if (!backupId) {
+    log.warn(
+      `No backups found for module "${botModuleName}" in s3store "${s3StoreName}" — cannot bootstrap`
+    );
+    return false;
+  }
+
+  // Create a one-shot restore Job
+  const batchV1Api = kc.makeApiClient(K8s.BatchV1Api);
+  const jobName = `eevee-${moduleName}-bootstrap-restore`;
+  const volumeMountPath = item.spec?.volumeMountPath || '/data';
+  const pvcName = `eevee-${item.metadata?.name}-data`;
+
+  const envVars: K8s.V1EnvVar[] = [
+    { name: 'S3_ENDPOINT', value: s3StoreSpec.endpoint },
+    { name: 'S3_BUCKET', value: s3StoreSpec.bucket },
+    { name: 'S3_PREFIX', value: s3StoreSpec.prefix || '' },
+    { name: 'S3_PATH_STYLE', value: String(s3StoreSpec.pathStyle || false) },
+    { name: 'RESTORE_NAMESPACE', value: namespace },
+    { name: 'RESTORE_MODULE', value: botModuleName },
+    { name: 'RESTORE_BACKUP_ID', value: backupId },
+    { name: 'BACKUP_PVC_PATH', value: volumeMountPath },
+  ];
+
+  // Add S3 credentials from Secrets
+  if (s3StoreSpec.accessId?.secretKeyRef?.secret?.name && s3StoreSpec.accessId.secretKeyRef.key) {
+    envVars.push({
+      name: 'S3_ACCESS_ID',
+      valueFrom: {
+        secretKeyRef: {
+          name: s3StoreSpec.accessId.secretKeyRef.secret.name,
+          key: s3StoreSpec.accessId.secretKeyRef.key,
+        },
+      },
+    });
+  }
+
+  if (s3StoreSpec.accessKey?.secretKeyRef?.secret?.name && s3StoreSpec.accessKey.secretKeyRef.key) {
+    envVars.push({
+      name: 'S3_SECRET_KEY',
+      valueFrom: {
+        secretKeyRef: {
+          name: s3StoreSpec.accessKey.secretKeyRef.secret.name,
+          key: s3StoreSpec.accessKey.secretKeyRef.key,
+        },
+      },
+    });
+  }
+
+  const volumes: K8s.V1Volume[] = [
+    {
+      name: 'module-data',
+      persistentVolumeClaim: { claimName: pvcName },
+    },
+  ];
+  const volumeMounts: K8s.V1VolumeMount[] = [
+    {
+      name: 'module-data',
+      mountPath: volumeMountPath,
+    },
+  ];
+
+  const job: K8s.V1Job = {
+    metadata: {
+      name: jobName,
+      namespace: namespace,
+    },
+    spec: {
+      template: {
+        spec: {
+          restartPolicy: 'OnFailure',
+          volumes: volumes,
+          containers: [
+            {
+              name: 'restore',
+              image: restoreImage,
+              command: ['/usr/local/bin/restore.sh'],
+              env: envVars,
+              volumeMounts: volumeMounts,
+            },
+          ],
+        },
+      },
+    },
+  };
+
+  try {
+    log.info(
+      `Creating bootstrap restore Job ${jobName} for BotModule "${moduleName}" (backup: ${backupId})`
+    );
+    await batchV1Api.createNamespacedJob({ namespace: namespace, body: job });
+  } catch (error) {
+    log.warn(
+      `Failed to create bootstrap restore Job for BotModule "${moduleName}":`,
+      error
+    );
+    return false;
+  }
+
+  // Wait for the Job to complete (poll with timeout)
+  const maxWaitMs = 300000; // 5 minutes
+  const pollIntervalMs = 5000;
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < maxWaitMs) {
+    try {
+      const jobStatus = await batchV1Api.readNamespacedJob({
+        name: jobName,
+        namespace: namespace,
+      });
+
+      if (jobStatus.status?.succeeded) {
+        log.info(
+          `Bootstrap restore Job succeeded for BotModule "${moduleName}"`
+        );
+
+        // Set the bootstrapped annotation on the botmodule CR
+        await setBootstrappedAnnotation(
+          customObjectsApi,
+          namespace,
+          item.metadata?.name!,
+        );
+
+        // Clean up the Job
+        try {
+          await batchV1Api.deleteNamespacedJob({
+            name: jobName,
+            namespace: namespace,
+          });
+        } catch {
+          // Best effort
+        }
+
+        return true;
+      }
+
+      if (jobStatus.status?.failed) {
+        log.warn(
+          `Bootstrap restore Job failed for BotModule "${moduleName}"`
+        );
+        return false;
+      }
+    } catch (error) {
+      log.warn('Error checking bootstrap restore Job status:', error);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+  }
+
+  log.warn(
+    `Bootstrap restore Job timed out for BotModule "${moduleName}" after ${maxWaitMs / 1000}s`
+  );
+  return false;
+}
+
+/**
+ * Resolve a secret key value from a Kubernetes Secret reference.
+ */
+async function resolveBootstrapSecretKey(
+  coreV1Api: K8s.CoreV1Api,
+  fallbackNamespace: string,
+  secretName: string,
+  secretNamespace: string,
+  key: string
+): Promise<string | undefined> {
+  try {
+    const response = await coreV1Api.readNamespacedSecret({
+      name: secretName,
+      namespace: secretNamespace || fallbackNamespace,
+    });
+    const data = response.data;
+    if (data && data[key]) {
+      return Buffer.from(data[key], 'base64').toString('utf-8');
+    }
+    return undefined;
+  } catch (error) {
+    log.warn(`Failed to read Secret "${secretName}":`, error);
+    return undefined;
+  }
+}
+
+/**
+ * Find the latest backup UUID for a module by listing S3 objects
+ * and selecting the most recent by LastModified timestamp.
+ */
+async function findLatestBackupForModule(
+  endpoint: string,
+  accessId: string,
+  secretKey: string,
+  bucket: string,
+  prefix: string,
+  namespace: string,
+  moduleName: string,
+  pathStyle: boolean
+): Promise<string | undefined> {
+  try {
+    const { S3Client, ListObjectsV2Command } = await import('@aws-sdk/client-s3');
+    const client = new S3Client({
+      endpoint: endpoint,
+      credentials: {
+        accessKeyId: accessId,
+        secretAccessKey: secretKey,
+      },
+      forcePathStyle: pathStyle,
+      region: 'us-east-1',
+    });
+
+    const s3Prefix = `${prefix}${namespace}/${moduleName}/`;
+    const command = new ListObjectsV2Command({
+      Bucket: bucket,
+      Prefix: s3Prefix,
+    });
+
+    const response = await client.send(command);
+    const objects = response.Contents;
+
+    if (!objects || objects.length === 0) {
+      return undefined;
+    }
+
+    const sorted = objects
+      .filter((obj) => obj.Key?.endsWith('.tar.gz'))
+      .sort((a, b) => {
+        const aTime = a.LastModified?.getTime() || 0;
+        const bTime = b.LastModified?.getTime() || 0;
+        return bTime - aTime;
+      });
+
+    if (sorted.length === 0) {
+      return undefined;
+    }
+
+    const latestKey = sorted[0].Key;
+    if (!latestKey) {
+      return undefined;
+    }
+
+    const parts = latestKey.split('/');
+    const filename = parts[parts.length - 1];
+    return filename.replace('.tar.gz', '');
+  } catch (error) {
+    log.warn('Failed to list S3 objects for bootstrap:', error);
+    return undefined;
+  }
+}
+
+/**
+ * Set the eevee.bot/bootstrapped annotation on a botmodule CR.
+ */
+async function setBootstrappedAnnotation(
+  customObjectsApi: K8s.CustomObjectsApi,
+  namespace: string,
+  name: string,
+): Promise<void> {
+  try {
+    await customObjectsApi.patchNamespacedCustomObject({
+      group: eevee.BotModule.details.group,
+      version: eevee.BotModule.details.version,
+      namespace: namespace,
+      plural: eevee.BotModule.details.plural,
+      name: name,
+      body: {
+        metadata: {
+          annotations: {
+            'eevee.bot/bootstrapped': 'true',
+          },
+        },
+      },
+    });
+    log.debug(`Set bootstrapped annotation on BotModule "${name}"`);
+  } catch (error) {
+    log.warn(
+      `Failed to set bootstrapped annotation on BotModule "${name}":`,
+      error
+    );
   }
 }
