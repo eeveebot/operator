@@ -330,6 +330,7 @@ async function reconcileResource(
       { name: 'RESTORE_MODULE', value: moduleName },
       { name: 'RESTORE_BACKUP_ID', value: backupId },
       { name: 'BACKUP_PVC_PATH', value: volumeMountPath },
+      { name: 'RESTORE_CLEAN', value: String(spec.cleanRestore || false) },
     ];
 
     if (accessIdSecretName && accessIdSecretKey) {
