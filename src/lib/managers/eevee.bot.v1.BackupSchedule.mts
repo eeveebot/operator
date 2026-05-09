@@ -162,14 +162,17 @@ async function reconcileResource(
     const accessKeySecretNamespace = s3StoreSpec.accessKey?.secretKeyRef?.secret?.namespace || namespace;
     const accessKeySecretKey = s3StoreSpec.accessKey?.secretKeyRef?.key;
 
-    // Find the botmodule that references this backupschedule
-    let moduleName: string | undefined;
-    let pvcName: string | undefined;
-    let pvcSpec: K8s.V1PersistentVolumeClaimSpec | undefined;
-    let volumeMountPath = '/data';
+    // Find ALL botmodules that reference this backupschedule
+    type BotModuleTarget = {
+      crName: string;
+      moduleName: string;
+      pvcName: string;
+      pvcSpec: K8s.V1PersistentVolumeClaimSpec | undefined;
+      volumeMountPath: string;
+    };
+    const targets: BotModuleTarget[] = [];
 
     try {
-      // List botmodules in the namespace to find one referencing this schedule
       const botModulesResponse = await customObjectsApi.listNamespacedCustomObject({
         group: eevee.BotModule.details.group,
         version: eevee.BotModule.details.version,
@@ -180,143 +183,181 @@ async function reconcileResource(
       const items = (botModulesResponse as { items: eevee.BotModule.botmoduleResource[] }).items;
       for (const bm of items) {
         if (bm.spec?.backupSchedule?.name === name) {
-          moduleName = bm.spec.moduleName || bm.metadata?.name;
-          pvcSpec = bm.spec?.persistentVolumeClaim;
-          volumeMountPath = bm.spec?.volumeMountPath || '/data';
-          // PVC name follows the operator convention: eevee-<cr-name>-module-pvc
-          pvcName = `eevee-${bm.metadata?.name}-module-pvc`;
-          break;
+          const crName = bm.metadata?.name!;
+          targets.push({
+            crName,
+            moduleName: bm.spec.moduleName || crName,
+            pvcName: `eevee-${crName}-module-pvc`,
+            pvcSpec: bm.spec?.persistentVolumeClaim,
+            volumeMountPath: bm.spec?.volumeMountPath || '/data',
+          });
         }
       }
     } catch (error) {
       log.warn(`Failed to list botmodules for BackupSchedule "${name}":`, error);
     }
 
-    if (!moduleName) {
+    if (targets.length === 0) {
       log.warn(
-        `No botmodule references BackupSchedule "${name}" — cannot determine backup target`
+        `No botmodules reference BackupSchedule "${name}" — cannot determine backup targets`
       );
       return;
     }
 
-    // Build the CronJob
-    const cronJobName = `${name}-backup`;
+    // Track which CronJob names we expect to exist after reconciliation
+    const expectedCronJobNames = new Set<string>();
 
-    const envVars: K8s.V1EnvVar[] = [
-      { name: 'S3_ENDPOINT', value: s3StoreSpec.endpoint },
-      { name: 'S3_BUCKET', value: s3StoreSpec.bucket },
-      { name: 'S3_PREFIX', value: s3StoreSpec.prefix || '' },
-      { name: 'S3_PATH_STYLE', value: String(s3StoreSpec.pathStyle || false) },
-      { name: 'BACKUP_NAMESPACE', value: namespace },
-      { name: 'BACKUP_MODULE', value: moduleName },
-      { name: 'BACKUP_PVC_PATH', value: volumeMountPath },
-    ];
+    // Create or update a CronJob for each botmodule target
+    for (const target of targets) {
+      const cronJobName = `${name}-${target.crName}-backup`;
+      expectedCronJobNames.add(cronJobName);
 
-    // Add S3 credentials from Secrets via env var references
-    if (accessIdSecretName && accessIdSecretKey) {
-      envVars.push({
-        name: 'S3_ACCESS_ID',
-        valueFrom: {
-          secretKeyRef: {
-            name: accessIdSecretName,
-            key: accessIdSecretKey,
+      const envVars: K8s.V1EnvVar[] = [
+        { name: 'S3_ENDPOINT', value: s3StoreSpec.endpoint },
+        { name: 'S3_BUCKET', value: s3StoreSpec.bucket },
+        { name: 'S3_PREFIX', value: s3StoreSpec.prefix || '' },
+        { name: 'S3_PATH_STYLE', value: String(s3StoreSpec.pathStyle || false) },
+        { name: 'BACKUP_NAMESPACE', value: namespace },
+        { name: 'BACKUP_MODULE', value: target.moduleName },
+        { name: 'BACKUP_PVC_PATH', value: target.volumeMountPath },
+      ];
+
+      // Add S3 credentials from Secrets via env var references
+      if (accessIdSecretName && accessIdSecretKey) {
+        envVars.push({
+          name: 'S3_ACCESS_ID',
+          valueFrom: {
+            secretKeyRef: {
+              name: accessIdSecretName,
+              key: accessIdSecretKey,
+            },
           },
-        },
-      });
-    }
+        });
+      }
 
-    if (accessKeySecretName && accessKeySecretKey) {
-      envVars.push({
-        name: 'S3_SECRET_KEY',
-        valueFrom: {
-          secretKeyRef: {
-            name: accessKeySecretName,
-            key: accessKeySecretKey,
+      if (accessKeySecretName && accessKeySecretKey) {
+        envVars.push({
+          name: 'S3_SECRET_KEY',
+          valueFrom: {
+            secretKeyRef: {
+              name: accessKeySecretName,
+              key: accessKeySecretKey,
+            },
           },
-        },
-      });
-    }
+        });
+      }
 
-    const volumes: K8s.V1Volume[] = [];
-    const volumeMounts: K8s.V1VolumeMount[] = [];
+      const volumes: K8s.V1Volume[] = [];
+      const volumeMounts: K8s.V1VolumeMount[] = [];
 
-    // Mount the botmodule's PVC
-    if (pvcName) {
-      volumes.push({
-        name: 'module-data',
-        persistentVolumeClaim: {
-          claimName: pvcName,
-        },
-      });
-      volumeMounts.push({
-        name: 'module-data',
-        mountPath: volumeMountPath,
-        readOnly: true,
-      });
-    }
-
-    const cronJob: K8s.V1CronJob = {
-      metadata: {
-        name: cronJobName,
-        namespace: namespace,
-        ownerReferences: [
-          {
-            apiVersion: `${eevee.BackupSchedule.details.group}/${eevee.BackupSchedule.details.version}`,
-            kind: eevee.BackupSchedule.details.plural,
-            name: name,
-            uid: uid,
-            controller: true,
-            blockOwnerDeletion: true,
+      // Mount the botmodule's PVC
+      if (target.pvcName) {
+        volumes.push({
+          name: 'module-data',
+          persistentVolumeClaim: {
+            claimName: target.pvcName,
           },
-        ],
-      },
-      spec: {
-        schedule: spec.schedule,
-        successfulJobsHistoryLimit: 3,
-        failedJobsHistoryLimit: 3,
-        concurrencyPolicy: 'Forbid',
-        jobTemplate: {
-          spec: {
-            template: {
-              spec: {
-                restartPolicy: 'OnFailure',
-                volumes: volumes,
-                containers: [
-                  {
-                    name: 'backup',
-                    image: spec.image,
-                    command: ['/usr/local/bin/backup.sh'],
-                    env: envVars,
-                    volumeMounts: volumeMounts,
-                  },
-                ],
+        });
+        volumeMounts.push({
+          name: 'module-data',
+          mountPath: target.volumeMountPath,
+          readOnly: true,
+        });
+      }
+
+      const cronJob: K8s.V1CronJob = {
+        metadata: {
+          name: cronJobName,
+          namespace: namespace,
+          ownerReferences: [
+            {
+              apiVersion: `${eevee.BackupSchedule.details.group}/${eevee.BackupSchedule.details.version}`,
+              kind: eevee.BackupSchedule.details.plural,
+              name: name,
+              uid: uid,
+              controller: true,
+              blockOwnerDeletion: true,
+            },
+          ],
+        },
+        spec: {
+          schedule: spec.schedule,
+          successfulJobsHistoryLimit: 3,
+          failedJobsHistoryLimit: 3,
+          concurrencyPolicy: 'Forbid',
+          jobTemplate: {
+            spec: {
+              template: {
+                spec: {
+                  restartPolicy: 'OnFailure',
+                  volumes: volumes,
+                  containers: [
+                    {
+                      name: 'backup',
+                      image: spec.image,
+                      command: ['/usr/local/bin/backup.sh'],
+                      env: envVars,
+                      volumeMounts: volumeMounts,
+                    },
+                  ],
+                },
               },
             },
           },
         },
-      },
-    };
+      };
 
-    // Create or update the CronJob
+      // Create or update the CronJob
+      try {
+        await batchV1Api.readNamespacedCronJob({
+          name: cronJobName,
+          namespace: namespace,
+        });
+        log.debug(`CronJob ${cronJobName} already exists — updating`);
+        await batchV1Api.replaceNamespacedCronJob({
+          name: cronJobName,
+          namespace: namespace,
+          body: cronJob,
+        });
+        log.info(`Updated CronJob ${cronJobName} in namespace ${namespace}`);
+      } catch {
+        log.info(`Creating CronJob ${cronJobName} in namespace ${namespace}`);
+        await batchV1Api.createNamespacedCronJob({
+          namespace: namespace,
+          body: cronJob,
+        });
+        log.info(`Created CronJob ${cronJobName} in namespace ${namespace}`);
+      }
+    } // end for (targets)
+
+    // Clean up stale CronJobs for botmodules that no longer reference this schedule
     try {
-      await batchV1Api.readNamespacedCronJob({
-        name: cronJobName,
+      const cronJobsResponse = await batchV1Api.listNamespacedCronJob({
         namespace: namespace,
       });
-      log.debug(`CronJob ${cronJobName} already exists — updating`);
-      await batchV1Api.replaceNamespacedCronJob({
-        name: cronJobName,
-        namespace: namespace,
-        body: cronJob,
-      });
-      log.info(`Updated CronJob ${cronJobName} in namespace ${namespace}`);
-    } catch {
-      log.info(`Creating CronJob ${cronJobName} in namespace ${namespace}`);
-      await batchV1Api.createNamespacedCronJob({
-        namespace: namespace,
-        body: cronJob,
-      });
-      log.info(`Created CronJob ${cronJobName} in namespace ${namespace}`);
+      const cronJobs = cronJobsResponse.items || [];
+      for (const cj of cronJobs) {
+        const cjName = cj.metadata?.name || '';
+        // Only consider CronJobs owned by this BackupSchedule
+        const isOwned = cj.metadata?.ownerReferences?.some(
+          (ref) => ref.uid === uid
+        );
+        if (isOwned && !expectedCronJobNames.has(cjName)) {
+          log.info(
+            `Deleting stale CronJob ${cjName} — botmodule no longer references BackupSchedule "${name}"`
+          );
+          try {
+            await batchV1Api.deleteNamespacedCronJob({
+              name: cjName,
+              namespace: namespace,
+            });
+          } catch (error) {
+            log.warn(`Failed to delete stale CronJob ${cjName}:`, error);
+          }
+        }
+      }
+    } catch (error) {
+      log.warn(`Failed to list CronJobs for stale cleanup:`, error);
     }
 
     // Update the backupschedule status
@@ -325,8 +366,8 @@ async function reconcileResource(
         {
           type: 'Ready',
           status: 'True',
-          reason: 'CronJobCreated',
-          message: `CronJob ${cronJobName} created`,
+          reason: 'CronJobsCreated',
+          message: `CronJobs created for ${targets.length} botmodule(s)`,
           lastTransitionTime: new Date().toISOString(),
         },
       ],
