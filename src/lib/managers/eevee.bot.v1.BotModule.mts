@@ -213,6 +213,8 @@ async function reconcileResource(
           log.warn(
             `Bootstrap restore failed for BotModule "${name}" — skipping deployment creation`
           );
+          // Status is already set by handleBootstrapFromBackup
+          // (WaitingForBackup or BootstrapRestoreFailed)
           return;
         }
       }
@@ -1097,6 +1099,11 @@ async function handleBootstrapFromBackup(
     log.warn(
       `No backups found for module "${botModuleName}" in s3store "${s3StoreName}" — cannot bootstrap`
     );
+    await updateBotModuleStatus(customObjectsApi, namespace, moduleName, {
+      lastTransitionTime: new Date().toISOString(),
+      message: `Waiting for backup: no backups found for module "${botModuleName}" in s3store "${s3StoreName}"`,
+      reason: 'WaitingForBackup',
+    });
     return false;
   }
 
@@ -1232,6 +1239,11 @@ async function handleBootstrapFromBackup(
         log.warn(
           `Bootstrap restore Job failed for BotModule "${moduleName}"`
         );
+        await updateBotModuleStatus(customObjectsApi, namespace, moduleName, {
+          lastTransitionTime: new Date().toISOString(),
+          message: `Bootstrap restore Job failed`,
+          reason: 'BootstrapRestoreFailed',
+        });
         return false;
       }
     } catch (error) {
@@ -1244,6 +1256,11 @@ async function handleBootstrapFromBackup(
   log.warn(
     `Bootstrap restore Job timed out for BotModule "${moduleName}" after ${maxWaitMs / 1000}s`
   );
+  await updateBotModuleStatus(customObjectsApi, namespace, moduleName, {
+    lastTransitionTime: new Date().toISOString(),
+    message: `Bootstrap restore Job timed out after ${maxWaitMs / 1000}s`,
+    reason: 'BootstrapRestoreFailed',
+  });
   return false;
 }
 
@@ -1444,6 +1461,34 @@ async function ensurePvcBootstrappedAnnotation(
   } catch (error) {
     log.debug(
       `Could not set bootstrapped annotation on PVC ${pvcName} (may not exist yet):`,
+      error
+    );
+  }
+}
+
+/**
+ * Update the status subresource on a botmodule CR.
+ */
+async function updateBotModuleStatus(
+  customObjectsApi: K8s.CustomObjectsApi,
+  namespace: string,
+  name: string,
+  status: Record<string, unknown>
+): Promise<void> {
+  try {
+    await customObjectsApi.patchNamespacedCustomObjectStatus({
+      group: eevee.BotModule.details.group,
+      version: eevee.BotModule.details.version,
+      namespace: namespace,
+      plural: eevee.BotModule.details.plural,
+      name: name,
+      body: {
+        status: status,
+      },
+    });
+  } catch (error) {
+    log.warn(
+      `Failed to update status for BotModule "${name}" in namespace "${namespace}":`,
       error
     );
   }
