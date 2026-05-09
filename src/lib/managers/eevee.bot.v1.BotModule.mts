@@ -1232,6 +1232,52 @@ async function handleBootstrapFromBackup(
   };
 
   try {
+    // Check if a bootstrap restore Job already exists
+    try {
+      const existingJob = await batchV1Api.readNamespacedJob({
+        name: jobName,
+        namespace: namespace,
+      });
+
+      if (existingJob.status?.succeeded) {
+        log.info(
+          `Bootstrap restore Job already succeeded for BotModule "${moduleName}"`
+        );
+        await ensurePvcBootstrappedAnnotation(coreV1Api, namespace, pvcName);
+
+        // Clean up the Job
+        try {
+          await batchV1Api.deleteNamespacedJob({ name: jobName, namespace: namespace });
+        } catch {
+          // Best effort
+        }
+        return true;
+      }
+
+      if (existingJob.status?.failed) {
+        log.warn(
+          `Bootstrap restore Job already failed for BotModule "${moduleName}" — not retrying, Job left for inspection`
+        );
+        await updateBotModuleStatus(customObjectsApi, namespace, moduleName, {
+          conditions: [{
+            type: 'Bootstrapped',
+            status: 'False',
+            reason: 'BootstrapRestoreFailed',
+            message: 'Bootstrap restore Job failed (Job retained for inspection)',
+            lastTransitionTime: new Date().toISOString(),
+          }],
+        });
+        return false;
+      }
+
+      // Job is still running — fall through to wait loop
+      log.debug(
+        `Bootstrap restore Job "${jobName}" still running — waiting for completion`
+      );
+    } catch {
+      // Job doesn't exist yet — create it below
+    }
+
     log.info(
       `Creating bootstrap restore Job ${jobName} for BotModule "${moduleName}" (backup: ${backupId})`
     );
