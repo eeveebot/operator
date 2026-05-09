@@ -1,13 +1,16 @@
 # eevee Operator
 
-> Kubernetes operator that manages BotModule and IpcConfig resources for the eevee chatbot ecosystem.
+> Kubernetes operator that manages BotModule, IpcConfig, S3Store, BackupSchedule, and BackupRestore resources for the eevee chatbot ecosystem.
 
 ## Overview
 
-This operator manages two custom resource types:
+This operator manages five custom resource types:
 
 1. **BotModule** - Deploys and manages all eevee modules (connectors, plugins, router, toolbox)
 2. **IpcConfig** - Manages NATS inter-process communication infrastructure
+3. **S3Store** - Validates and tracks S3-compatible storage connections for backups
+4. **BackupSchedule** - Creates and manages CronJobs for scheduled PVC backups to S3
+5. **BackupRestore** - Creates one-shot restore Jobs to recover PVC data from S3 backups
 
 For each BotModule resource, the operator creates and maintains a Kubernetes Deployment, ConfigMap (for module configuration), and optional PersistentVolumeClaim. For each IpcConfig resource, the operator deploys and manages a NATS server with authentication.
 
@@ -97,6 +100,39 @@ Modules use `setupHttpServer({ natsClients })` from `@eeveebot/libeevee` to wire
 Custom probes can be specified via `livenessProbe`, `readinessProbe`, and `startupProbe` fields in the BotModule spec. These accept standard Kubernetes `V1Probe` objects and override the defaults entirely.
 
 If a module has `metrics: false`, no default probes are set.
+
+### S3 Backups
+
+The operator supports scheduled backups of module PVCs to S3-compatible storage, and on-demand restores.
+
+**Resources:**
+
+- **S3Store** — defines an S3 connection (endpoint, bucket, credentials via secrets). The operator validates connectivity and surfaces the result in `status.lastConnectionTest`.
+- **BackupSchedule** — ties an S3Store to a cron schedule and a botmodule. The operator creates and manages a CronJob that runs the backup image on schedule.
+- **BackupRestore** — triggers a one-shot restore Job to recover a module's PVC from a specific backup (or the latest available).
+- **BotModule** extensions — `spec.backupSchedule` references a backupschedule CR; `spec.bootstrapFromBackup` restores the latest backup before first deployment.
+
+**S3 path format:** `<prefix>/<namespace>/<moduleName>/<uuid>.tar.gz`
+
+**Backup image:** A separate container image (`ghcr.io/eeveebot/backup`) provides `backup.sh` and `restore.sh` scripts using `s3cmd`.
+
+### BotModule Status Lifecycle
+
+The operator tracks the module lifecycle via the `status` subresource. Every reconciliation overwrites status with the current truth — no stale snapshots.
+
+| Reason | When |
+|--------|------|
+| `Pending` | Reconciliation starting |
+| `WaitingForBackup` | `bootstrapFromBackup` set, no backups in S3 |
+| `Bootstrapping` | Restore Job running |
+| `BootstrapRestoreFailed` | Restore Job failed or timed out |
+| `Disabled` | `spec.enabled: false` |
+| `Creating` | Deployment just created |
+| `Updating` | Deployment rolling out |
+| `Ready` | Deployment healthy |
+| `Unavailable` | Deployment degraded |
+
+**Bootstrap annotation:** The operator tracks whether a PVC has been bootstrapped via the `eevee.bot/bootstrapped` annotation on the PVC itself (not the CR). This prevents stale restores over live data. The `backuprestore` CRD overrides the annotation — it always runs and sets the annotation on success.
 
 ## Helpful Commands
 
