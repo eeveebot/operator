@@ -5,6 +5,7 @@ import { ResourceEvent, ResourceEventType } from '@thehonker/k8s-operator';
 import * as K8s from '@kubernetes/client-node';
 
 import { log } from '../../lib/logging.mjs';
+import { resolveSecretKey, findLatestBackup } from '../../lib/functions.mjs';
 import { managedCrd } from '../../lib/managers/types.mjs';
 import { parseBool } from '../../lib/functions.mjs';
 import { k8sResourceEventsTotal } from '../../lib/metrics.mjs';
@@ -1102,14 +1103,14 @@ async function handleBootstrapFromBackup(
   }
 
   // Find the latest backup via S3 listing
-  const accessId = await resolveBootstrapSecretKey(
+  const accessId = await resolveSecretKey(
     coreV1Api,
     namespace,
     s3StoreSpec.accessId?.secretKeyRef?.secret?.name!,
     s3StoreSpec.accessId?.secretKeyRef?.secret?.namespace || namespace,
     s3StoreSpec.accessId?.secretKeyRef?.key!
   );
-  const secretKey = await resolveBootstrapSecretKey(
+  const secretKey = await resolveSecretKey(
     coreV1Api,
     namespace,
     s3StoreSpec.accessKey?.secretKeyRef?.secret?.name!,
@@ -1125,7 +1126,7 @@ async function handleBootstrapFromBackup(
   }
 
   const botModuleName = item.spec?.moduleName || moduleName;
-  const backupId = await findLatestBackupForModule(
+  const backupId = await findLatestBackup(
     s3StoreSpec.endpoint,
     accessId,
     secretKey,
@@ -1327,96 +1328,7 @@ async function handleBootstrapFromBackup(
 }
 
 /**
- * Resolve a secret key value from a Kubernetes Secret reference.
- */
-async function resolveBootstrapSecretKey(
-  coreV1Api: K8s.CoreV1Api,
-  fallbackNamespace: string,
-  secretName: string,
-  secretNamespace: string,
-  key: string
-): Promise<string | undefined> {
-  try {
-    const response = await coreV1Api.readNamespacedSecret({
-      name: secretName,
-      namespace: secretNamespace || fallbackNamespace,
-    });
-    const data = response.data;
-    if (data && data[key]) {
-      return Buffer.from(data[key], 'base64').toString('utf-8');
-    }
-    return undefined;
-  } catch (error) {
-    log.warn(`Failed to read Secret "${secretName}":`, error);
-    return undefined;
-  }
-}
-
-/**
  * Find the latest backup UUID for a module by listing S3 objects
- * and selecting the most recent by LastModified timestamp.
- */
-async function findLatestBackupForModule(
-  endpoint: string,
-  accessId: string,
-  secretKey: string,
-  bucket: string,
-  prefix: string,
-  namespace: string,
-  moduleName: string,
-  pathStyle: boolean
-): Promise<string | undefined> {
-  try {
-    const { S3Client, ListObjectsV2Command } = await import('@aws-sdk/client-s3');
-    const client = new S3Client({
-      endpoint: endpoint,
-      credentials: {
-        accessKeyId: accessId,
-        secretAccessKey: secretKey,
-      },
-      forcePathStyle: pathStyle,
-      region: 'us-east-1',
-    });
-
-    const s3Prefix = `${prefix}${namespace}/${moduleName}/`;
-    const command = new ListObjectsV2Command({
-      Bucket: bucket,
-      Prefix: s3Prefix,
-    });
-
-    const response = await client.send(command);
-    const objects = response.Contents;
-
-    if (!objects || objects.length === 0) {
-      return undefined;
-    }
-
-    const sorted = objects
-      .filter((obj) => obj.Key?.endsWith('.tar.gz'))
-      .sort((a, b) => {
-        const aTime = a.LastModified?.getTime() || 0;
-        const bTime = b.LastModified?.getTime() || 0;
-        return bTime - aTime;
-      });
-
-    if (sorted.length === 0) {
-      return undefined;
-    }
-
-    const latestKey = sorted[0].Key;
-    if (!latestKey) {
-      return undefined;
-    }
-
-    const parts = latestKey.split('/');
-    const filename = parts[parts.length - 1];
-    return filename.replace('.tar.gz', '');
-  } catch (error) {
-    log.warn('Failed to list S3 objects for bootstrap:', error);
-    return undefined;
-  }
-}
-
 /**
  * Ensure a PVC exists for the module. Creates it if it doesn't already exist.
  * This is called from the reconciler before deployment creation or bootstrap restore,

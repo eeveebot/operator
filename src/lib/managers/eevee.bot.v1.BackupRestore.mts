@@ -5,10 +5,10 @@ import { ResourceEvent, ResourceEventType } from '@thehonker/k8s-operator';
 import * as K8s from '@kubernetes/client-node';
 
 import { log } from '../../lib/logging.mjs';
+import { resolveSecretKey, findLatestBackup } from '../../lib/functions.mjs';
 import { managedCrd } from '../../lib/managers/types.mjs';
 import { parseBool } from '../../lib/functions.mjs';
 import { k8sResourceEventsTotal } from '../../lib/metrics.mjs';
-import { S3Client, ListObjectsV2Command } from '@aws-sdk/client-s3';
 
 // Create KubeConfig for this manager
 const kc = new K8s.KubeConfig();
@@ -429,105 +429,9 @@ async function reconcileResource(
   }
 }
 
-/**
- * Resolve a secret key value from a Kubernetes Secret reference.
- */
-async function resolveSecretKey(
-  coreV1Api: K8s.CoreV1Api,
-  fallbackNamespace: string,
-  secretName: string,
-  secretNamespace: string,
-  key: string
-): Promise<string | undefined> {
-  try {
-    const response = await coreV1Api.readNamespacedSecret({
-      name: secretName,
-      namespace: secretNamespace || fallbackNamespace,
-    });
-
-    const data = response.data;
-    if (data && data[key]) {
-      return Buffer.from(data[key], 'base64').toString('utf-8');
-    }
-
-    log.warn(`Key "${key}" not found in Secret "${secretName}"`);
-    return undefined;
-  } catch (error) {
-    log.error(
-      `Failed to read Secret "${secretName}" in namespace "${secretNamespace}":`,
-      error
-    );
-    return undefined;
-  }
-}
 
 /**
  * Find the latest backup UUID for a module by listing S3 objects
- * and selecting the most recent by LastModified timestamp.
- */
-async function findLatestBackup(
-  endpoint: string,
-  accessId: string,
-  secretKey: string,
-  bucket: string,
-  prefix: string,
-  namespace: string,
-  moduleName: string,
-  pathStyle: boolean
-): Promise<string | undefined> {
-  try {
-    const client = new S3Client({
-      endpoint: endpoint,
-      credentials: {
-        accessKeyId: accessId,
-        secretAccessKey: secretKey,
-      },
-      forcePathStyle: pathStyle,
-      region: 'us-east-1',
-    });
-
-    const s3Prefix = `${prefix}${namespace}/${moduleName}/`;
-
-    const command = new ListObjectsV2Command({
-      Bucket: bucket,
-      Prefix: s3Prefix,
-    });
-
-    const response = await client.send(command);
-    const objects = response.Contents;
-
-    if (!objects || objects.length === 0) {
-      return undefined;
-    }
-
-    // Sort by LastModified descending, pick the latest
-    const sorted = objects
-      .filter((obj) => obj.Key?.endsWith('.tar.gz'))
-      .sort((a, b) => {
-        const aTime = a.LastModified?.getTime() || 0;
-        const bTime = b.LastModified?.getTime() || 0;
-        return bTime - aTime;
-      });
-
-    if (sorted.length === 0) {
-      return undefined;
-    }
-
-    // Extract UUID from the key: <prefix>/<namespace>/<moduleName>/<uuid>.tar.gz
-    const latestKey = sorted[0].Key;
-    if (!latestKey) {
-      return undefined;
-    }
-
-    const parts = latestKey.split('/');
-    const filename = parts[parts.length - 1];
-    const uuid = filename.replace('.tar.gz', '');
-
-    return uuid;
-  } catch (error) {
-    log.warn('Failed to list S3 objects for latest backup:', error);
-    return undefined;
-  }
 }
 
 /**

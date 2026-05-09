@@ -6,6 +6,7 @@ import * as K8s from '@kubernetes/client-node';
 import { S3Client, ListObjectsV2Command } from '@aws-sdk/client-s3';
 
 import { log } from '../../lib/logging.mjs';
+import { resolveSecretKey } from '../../lib/functions.mjs';
 import { managedCrd } from '../../lib/managers/types.mjs';
 import { parseBool } from '../../lib/functions.mjs';
 import { k8sResourceEventsTotal } from '../../lib/metrics.mjs';
@@ -236,38 +237,6 @@ async function reconcileResource(
     log.debug('S3Store reconciliation completed successfully');
   } catch (error) {
     log.error('Error during s3store reconciliation:', error);
-  }
-}
-
-/**
- * Resolve a secret key value from a Kubernetes Secret reference.
- */
-async function resolveSecretKey(
-  coreV1Api: K8s.CoreV1Api,
-  fallbackNamespace: string,
-  secretName: string,
-  secretNamespace: string,
-  key: string
-): Promise<string | undefined> {
-  try {
-    const response = await coreV1Api.readNamespacedSecret({
-      name: secretName,
-      namespace: secretNamespace || fallbackNamespace,
-    });
-
-    const data = response.data;
-    if (data && data[key]) {
-      return Buffer.from(data[key], 'base64').toString('utf-8');
-    }
-
-    log.warn(`Key "${key}" not found in Secret "${secretName}"`);
-    return undefined;
-  } catch (error) {
-    log.error(
-      `Failed to read Secret "${secretName}" in namespace "${secretNamespace}":`,
-      error
-    );
-    return undefined;
   }
 }
 
