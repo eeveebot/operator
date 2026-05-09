@@ -130,10 +130,11 @@ async function reconcileResource(
       return;
     }
 
-    // If phase is already terminal, skip reconciliation
-    const currentPhase = (item.status as unknown as Record<string, unknown>)?.phase as string | undefined;
-    if (currentPhase === 'Succeeded' || currentPhase === 'Failed') {
-      log.debug(`BackupRestore "${name}" is in terminal phase "${currentPhase}" — skipping`);
+    // If status is already terminal (Ready=True or Ready=False), skip reconciliation
+    const currentConditions = (item.status as unknown as { conditions?: { type: string; status: string; reason: string }[] })?.conditions;
+    const readyCondition = currentConditions?.find(c => c.type === 'Ready');
+    if (readyCondition && readyCondition.status !== 'Unknown') {
+      log.debug(`BackupRestore "${name}" is in terminal state (${readyCondition.status}/${readyCondition.reason}) — skipping`);
       return;
     }
 
@@ -161,8 +162,13 @@ async function reconcileResource(
         await ensureRestorePvcBootstrapped(coreV1Api, namespace, pvcName);
 
         await updateBackupRestoreStatus(customObjectsApi, namespace, name, {
-          phase: 'Succeeded',
-          jobName: jobName,
+          conditions: [{
+            type: 'Ready',
+            status: 'True',
+            reason: 'Succeeded',
+            message: `Restore Job ${jobName} succeeded`,
+            lastTransitionTime: new Date().toISOString(),
+          }],
         });
         return;
       }
@@ -170,8 +176,13 @@ async function reconcileResource(
       if (job.status?.failed) {
         log.warn(`Restore Job "${jobName}" failed`);
         await updateBackupRestoreStatus(customObjectsApi, namespace, name, {
-          phase: 'Failed',
-          jobName: jobName,
+          conditions: [{
+            type: 'Ready',
+            status: 'False',
+            reason: 'Failed',
+            message: `Restore Job ${jobName} failed`,
+            lastTransitionTime: new Date().toISOString(),
+          }],
         });
         return;
       }
@@ -179,8 +190,13 @@ async function reconcileResource(
       // Job is still running
       log.debug(`Restore Job "${jobName}" is still running`);
       await updateBackupRestoreStatus(customObjectsApi, namespace, name, {
-        phase: 'Running',
-        jobName: jobName,
+        conditions: [{
+          type: 'Ready',
+          status: 'Unknown',
+          reason: 'Running',
+          message: `Restore Job ${jobName} in progress`,
+          lastTransitionTime: new Date().toISOString(),
+        }],
       });
       return;
     } catch {
@@ -284,7 +300,13 @@ async function reconcileResource(
       if (!backupId) {
         log.warn(`No backups found for module "${moduleName}" in s3store "${s3StoreName}"`);
         await updateBackupRestoreStatus(customObjectsApi, namespace, name, {
-          phase: 'Failed',
+          conditions: [{
+            type: 'Ready',
+            status: 'False',
+            reason: 'NoBackupsFound',
+            message: `No backups found for module "${moduleName}" in s3store "${s3StoreName}"`,
+            lastTransitionTime: new Date().toISOString(),
+          }],
         });
         return;
       }
@@ -392,9 +414,13 @@ async function reconcileResource(
     });
 
     await updateBackupRestoreStatus(customObjectsApi, namespace, name, {
-      phase: 'Pending',
-      jobName: jobName,
-      restoredBackupId: backupId,
+      conditions: [{
+        type: 'Ready',
+        status: 'Unknown',
+        reason: 'Pending',
+        message: `Restore Job ${jobName} created for backup ${backupId}`,
+        lastTransitionTime: new Date().toISOString(),
+      }],
     });
 
     log.debug('BackupRestore reconciliation completed successfully');

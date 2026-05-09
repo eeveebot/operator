@@ -321,7 +321,15 @@ async function reconcileResource(
 
     // Update the backupschedule status
     await updateBackupScheduleStatus(customObjectsApi, namespace, name, {
-      cronJobName: cronJobName,
+      conditions: [
+        {
+          type: 'Ready',
+          status: 'True',
+          reason: 'CronJobCreated',
+          message: `CronJob ${cronJobName} created`,
+          lastTransitionTime: new Date().toISOString(),
+        },
+      ],
     });
 
     log.debug('BackupSchedule reconciliation completed successfully');

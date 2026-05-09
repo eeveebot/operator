@@ -167,11 +167,15 @@ async function reconcileResource(
       return;
     }
 
-    // Set status to Pending at the start of reconciliation
+    // Set initial status during reconciliation
     await updateBotModuleStatus(customObjectsApi, namespace, name, {
-      lastTransitionTime: new Date().toISOString(),
-      message: 'Reconciling',
-      reason: 'Pending',
+      conditions: [{
+        type: 'Ready',
+        status: 'Unknown',
+        reason: 'Reconciling',
+        message: 'Reconciling',
+        lastTransitionTime: new Date().toISOString(),
+      }],
     });
 
     // Generate deployment name based on botmodule custom resource object name
@@ -242,9 +246,13 @@ async function reconcileResource(
 
       // Set status to Creating — deployment was just created, may not be ready yet
       await updateBotModuleStatus(customObjectsApi, namespace, name, {
-        lastTransitionTime: new Date().toISOString(),
-        message: 'Deployment created',
-        reason: 'Creating',
+        conditions: [{
+          type: 'Ready',
+          status: 'Unknown',
+          reason: 'Creating',
+          message: 'Deployment created',
+          lastTransitionTime: new Date().toISOString(),
+        }],
       });
     }
 
@@ -676,9 +684,13 @@ async function updateModuleDeployment(
       log.debug(`Deployment ${deploymentName} for disabled BotModule "${moduleName}" not found or already deleted`);
     }
     await updateBotModuleStatus(customObjectsApi, namespace, moduleName, {
-      lastTransitionTime: new Date().toISOString(),
-      message: 'Module is disabled',
-      reason: 'Disabled',
+      conditions: [{
+        type: 'Ready',
+        status: 'False',
+        reason: 'Disabled',
+        message: 'Module is disabled',
+        lastTransitionTime: new Date().toISOString(),
+      }],
     });
     return;
   }
@@ -1129,9 +1141,13 @@ async function handleBootstrapFromBackup(
       `No backups found for module "${botModuleName}" in s3store "${s3StoreName}" — cannot bootstrap`
     );
     await updateBotModuleStatus(customObjectsApi, namespace, moduleName, {
-      lastTransitionTime: new Date().toISOString(),
-      message: `Waiting for backup: no backups found for module "${botModuleName}" in s3store "${s3StoreName}"`,
-      reason: 'WaitingForBackup',
+      conditions: [{
+        type: 'Bootstrapped',
+        status: 'False',
+        reason: 'WaitingForBackup',
+        message: `Waiting for backup: no backups found for module "${botModuleName}" in s3store "${s3StoreName}"`,
+        lastTransitionTime: new Date().toISOString(),
+      }],
     });
     return false;
   }
@@ -1219,9 +1235,13 @@ async function handleBootstrapFromBackup(
       `Creating bootstrap restore Job ${jobName} for BotModule "${moduleName}" (backup: ${backupId})`
     );
     await updateBotModuleStatus(customObjectsApi, namespace, moduleName, {
-      lastTransitionTime: new Date().toISOString(),
-      message: `Restoring from backup ${backupId}`,
-      reason: 'Bootstrapping',
+      conditions: [{
+        type: 'Bootstrapped',
+        status: 'Unknown',
+        reason: 'Bootstrapping',
+        message: `Restoring from backup ${backupId}`,
+        lastTransitionTime: new Date().toISOString(),
+      }],
     });
     await batchV1Api.createNamespacedJob({ namespace: namespace, body: job });
   } catch (error) {
@@ -1274,9 +1294,13 @@ async function handleBootstrapFromBackup(
           `Bootstrap restore Job failed for BotModule "${moduleName}"`
         );
         await updateBotModuleStatus(customObjectsApi, namespace, moduleName, {
-          lastTransitionTime: new Date().toISOString(),
-          message: `Bootstrap restore Job failed`,
-          reason: 'BootstrapRestoreFailed',
+          conditions: [{
+            type: 'Bootstrapped',
+            status: 'False',
+            reason: 'BootstrapRestoreFailed',
+            message: 'Bootstrap restore Job failed',
+            lastTransitionTime: new Date().toISOString(),
+          }],
         });
         return false;
       }
@@ -1291,9 +1315,13 @@ async function handleBootstrapFromBackup(
     `Bootstrap restore Job timed out for BotModule "${moduleName}" after ${maxWaitMs / 1000}s`
   );
   await updateBotModuleStatus(customObjectsApi, namespace, moduleName, {
-    lastTransitionTime: new Date().toISOString(),
-    message: `Bootstrap restore Job timed out after ${maxWaitMs / 1000}s`,
-    reason: 'BootstrapRestoreFailed',
+    conditions: [{
+      type: 'Bootstrapped',
+      status: 'False',
+      reason: 'BootstrapRestoreFailed',
+      message: `Bootstrap restore Job timed out after ${maxWaitMs / 1000}s`,
+      lastTransitionTime: new Date().toISOString(),
+    }],
   });
   return false;
 }
@@ -1552,28 +1580,44 @@ async function updateBotModuleStatusFromDeployment(
 
     if (available > 0 && unavailable === 0) {
       await updateBotModuleStatus(customObjectsApi, namespace, name, {
-        lastTransitionTime: new Date().toISOString(),
-        message: `Deployment ready (${available}/${replicas} replicas available)`,
-        reason: 'Ready',
+        conditions: [{
+          type: 'Ready',
+          status: 'True',
+          reason: 'AvailableReplicas',
+          message: `Deployment ready (${available}/${replicas} replicas available)`,
+          lastTransitionTime: new Date().toISOString(),
+        }],
       });
     } else if (unavailable > 0) {
       await updateBotModuleStatus(customObjectsApi, namespace, name, {
-        lastTransitionTime: new Date().toISOString(),
-        message: `Deployment unavailable (${unavailable} unavailable replica(s), ${available} available)`,
-        reason: 'Unavailable',
+        conditions: [{
+          type: 'Ready',
+          status: 'False',
+          reason: 'UnavailableReplicas',
+          message: `Deployment unavailable (${unavailable} unavailable replica(s), ${available} available)`,
+          lastTransitionTime: new Date().toISOString(),
+        }],
       });
     } else if (replicas > 0 && available === 0) {
       // Rolling out — no replicas available yet but not explicitly unavailable
       await updateBotModuleStatus(customObjectsApi, namespace, name, {
-        lastTransitionTime: new Date().toISOString(),
-        message: `Deployment updating (${updated}/${replicas} updated)`,
-        reason: 'Updating',
+        conditions: [{
+          type: 'Ready',
+          status: 'Unknown',
+          reason: 'Updating',
+          message: `Deployment updating (${updated}/${replicas} updated)`,
+          lastTransitionTime: new Date().toISOString(),
+        }],
       });
     } else {
       await updateBotModuleStatus(customObjectsApi, namespace, name, {
-        lastTransitionTime: new Date().toISOString(),
-        message: 'Deployment exists',
-        reason: 'Ready',
+        conditions: [{
+          type: 'Ready',
+          status: 'True',
+          reason: 'AvailableReplicas',
+          message: 'Deployment exists',
+          lastTransitionTime: new Date().toISOString(),
+        }],
       });
     }
   } catch (error) {
