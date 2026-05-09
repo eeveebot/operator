@@ -244,7 +244,7 @@ async function reconcileResource(
 
     // Ensure PVC exists before anything else (deployment, bootstrap restore, etc.)
     if (item.spec?.persistentVolumeClaim) {
-      await ensurePvc(coreV1Api, namespace, pvcName, item.spec.persistentVolumeClaim);
+      await ensurePvc(coreV1Api, namespace, pvcName, item.spec.persistentVolumeClaim, item.spec?.backupSchedule?.name);
     }
 
     // Check if deployment exists
@@ -1486,6 +1486,7 @@ async function ensurePvc(
   namespace: string,
   pvcName: string,
   pvcSpec: K8s.V1PersistentVolumeClaimSpec,
+  scheduleName?: string,
 ): Promise<void> {
   try {
     await coreV1Api.readNamespacedPersistentVolumeClaim({
@@ -1493,6 +1494,25 @@ async function ensurePvc(
       namespace: namespace,
     });
     log.debug(`PVC ${pvcName} already exists in namespace ${namespace}`);
+
+    // Update the backup-schedule label to match current state
+    if (scheduleName !== undefined) {
+      try {
+        await coreV1Api.patchNamespacedPersistentVolumeClaim({
+          name: pvcName,
+          namespace: namespace,
+          body: {
+            metadata: {
+              labels: scheduleName
+                ? { 'eevee.bot/backup-schedule': scheduleName }
+                : { 'eevee.bot/backup-schedule': null },
+            },
+          },
+        });
+      } catch (error) {
+        log.debug('Failed to update backup-schedule label on PVC:', error);
+      }
+    }
   } catch {
     // PVC doesn't exist — create it
     // Ensure the spec has the required resources.storage field
@@ -1515,6 +1535,9 @@ async function ensurePvc(
         body: {
           metadata: {
             name: pvcName,
+            labels: scheduleName
+              ? { 'eevee.bot/backup-schedule': scheduleName }
+              : undefined,
           },
           spec: pvcSpec,
         },
