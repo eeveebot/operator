@@ -33,6 +33,28 @@ export const managedCrds: managedCrd[] = [
 async function handleResourceEvent(event: ResourceEvent): Promise<void> {
   log.debug('Received IpcConfig resource event:', event);
 
+  // Skip reconciliation if only status changed (our own status update bounced back).
+  // generation increments on spec changes; observedGeneration records which generation
+  // we last reconciled. If they match and status is terminal, this is a status-only update.
+  if (event.type === ResourceEventType.Modified) {
+    const obj = event.object as eevee.IpcConfig.IpcConfigResource;
+    const currentGeneration = obj.metadata?.generation;
+    const observedGeneration = obj.status?.conditions?.[0]?.observedGeneration;
+    const currentStatus = obj.status?.conditions?.[0]?.status;
+
+    if (
+      currentGeneration !== undefined &&
+      observedGeneration !== undefined &&
+      currentGeneration === observedGeneration &&
+      currentStatus !== 'Unknown'
+    ) {
+      log.debug(
+        `Skipping IpcConfig "${event.meta.name}" reconciliation — generation unchanged (observed=${observedGeneration}, current=${currentGeneration})`
+      );
+      return;
+    }
+  }
+
   // Track Kubernetes resource events
   k8sResourceEventsTotal.inc({
     resource_type: 'IpcConfig',
@@ -161,6 +183,7 @@ async function reconcileResource(
   const appsV1Api = kc.makeApiClient(K8s.AppsV1Api);
   const coreV1Api = kc.makeApiClient(K8s.CoreV1Api);
   const customObjectsApi = kc.makeApiClient(K8s.CustomObjectsApi);
+  let generation: number | undefined;
 
   try {
     // Get the specific resource that changed
@@ -197,6 +220,7 @@ async function reconcileResource(
     const namespace = item.metadata?.namespace;
     const name = item.metadata?.name;
     const uid = item.metadata?.uid;
+    generation = item.metadata?.generation;
 
     if (!namespace || !name) {
       log.debug('Skipping IpcConfig resource with missing namespace or name');
@@ -250,7 +274,7 @@ async function reconcileResource(
         message: `NATS deployment and service are configured`,
         lastTransitionTime: new Date().toISOString(),
       }],
-    });
+    }, generation);
   } catch (error) {
     log.error('Error during ipcconfig reconciliation:', error);
     // Try to set error status — best effort
@@ -266,7 +290,7 @@ async function reconcileResource(
             message: `Reconciliation failed: ${error}`,
             lastTransitionTime: new Date().toISOString(),
           }],
-        });
+        }, generation);
       }
     } catch (statusError) {
       log.debug('Failed to update error status:', statusError);
@@ -968,8 +992,16 @@ async function updateIpcConfigStatus(
   customObjectsApi: K8s.CustomObjectsApi,
   namespace: string,
   name: string,
-  status: Record<string, unknown>
+  status: Record<string, unknown>,
+  generation?: number
 ): Promise<void> {
+  // Inject observedGeneration into each condition
+  if (generation !== undefined && Array.isArray(status.conditions)) {
+    for (const condition of status.conditions as Array<Record<string, unknown>>) {
+      condition.observedGeneration = generation;
+    }
+  }
+
   try {
     await customObjectsApi.patchNamespacedCustomObjectStatus({
       group: eevee.IpcConfig.details.group,

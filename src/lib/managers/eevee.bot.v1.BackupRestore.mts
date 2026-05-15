@@ -31,6 +31,28 @@ export const managedCrds: managedCrd[] = [
 async function handleResourceEvent(event: ResourceEvent): Promise<void> {
   log.debug('Received BackupRestore resource event:', event);
 
+  // Skip reconciliation if only status changed (our own status update bounced back).
+  // generation increments on spec changes; observedGeneration records which generation
+  // we last reconciled. If they match and status is terminal, this is a status-only update.
+  if (event.type === ResourceEventType.Modified) {
+    const obj = event.object as eevee.BackupRestore.BackupRestoreResource;
+    const currentGeneration = obj.metadata?.generation;
+    const observedGeneration = obj.status?.conditions?.[0]?.observedGeneration;
+    const currentStatus = obj.status?.conditions?.[0]?.status;
+
+    if (
+      currentGeneration !== undefined &&
+      observedGeneration !== undefined &&
+      currentGeneration === observedGeneration &&
+      currentStatus !== 'Unknown'
+    ) {
+      log.debug(
+        `Skipping BackupRestore "${event.meta.name}" reconciliation — generation unchanged (observed=${observedGeneration}, current=${currentGeneration})`
+      );
+      return;
+    }
+  }
+
   // Track Kubernetes resource events
   k8sResourceEventsTotal.inc({
     resource_type: 'BackupRestore',
@@ -117,6 +139,7 @@ async function reconcileResource(
     const namespace = item.metadata?.namespace;
     const name = item.metadata?.name;
     const uid = item.metadata?.uid;
+    const generation = item.metadata?.generation;
 
     if (!namespace || !name || !uid) {
       log.debug('Skipping BackupRestore resource with missing namespace, name, or uid');
@@ -136,7 +159,7 @@ async function reconcileResource(
             lastTransitionTime: new Date().toISOString(),
           },
         ],
-      }, true);
+      }, true, generation);
       return;
     }
 
@@ -177,7 +200,7 @@ async function reconcileResource(
             message: `Restore Job ${jobName} succeeded`,
             lastTransitionTime: new Date().toISOString(),
           }],
-        }, true);
+        }, true, generation);
         return;
       }
 
@@ -191,7 +214,7 @@ async function reconcileResource(
             message: `Restore Job ${jobName} failed`,
             lastTransitionTime: new Date().toISOString(),
           }],
-        }, true);
+        }, true, generation);
         return;
       }
 
@@ -205,7 +228,7 @@ async function reconcileResource(
           message: `Restore Job ${jobName} in progress`,
           lastTransitionTime: new Date().toISOString(),
         }],
-      });
+      }, undefined, generation);
       return;
     } catch {
       // Job doesn't exist yet
@@ -241,7 +264,7 @@ async function reconcileResource(
           message: `Failed to resolve botmodule "${botModuleName}"`,
           lastTransitionTime: new Date().toISOString(),
         }],
-      }, true);
+      }, true, generation);
       return;
     }
 
@@ -255,7 +278,7 @@ async function reconcileResource(
           message: `botmodule "${botModuleName}" has no moduleName`,
           lastTransitionTime: new Date().toISOString(),
         }],
-      }, true);
+      }, true, generation);
       return;
     }
 
@@ -290,7 +313,7 @@ async function reconcileResource(
             message: msg,
             lastTransitionTime: new Date().toISOString(),
           }],
-        }, true);
+        }, true, generation);
         return;
       }
     } catch (error) {
@@ -303,7 +326,7 @@ async function reconcileResource(
           message: `Failed to resolve s3store "${s3StoreName}"`,
           lastTransitionTime: new Date().toISOString(),
         }],
-      }, true);
+      }, true, generation);
       return;
     }
 
@@ -317,7 +340,7 @@ async function reconcileResource(
           message: `s3store "${s3StoreName}" has no spec`,
           lastTransitionTime: new Date().toISOString(),
         }],
-      }, true);
+      }, true, generation);
       return;
     }
 
@@ -366,7 +389,7 @@ async function reconcileResource(
             message: 'Failed to resolve S3 credentials from Secrets',
             lastTransitionTime: new Date().toISOString(),
           }],
-        }, true);
+        }, true, generation);
         return;
       }
 
@@ -392,7 +415,7 @@ async function reconcileResource(
             message: `No backups found for module "${moduleName}" in s3store "${s3StoreName}"`,
             lastTransitionTime: new Date().toISOString(),
           }],
-        }, true);
+        }, true, generation);
         return;
       }
 
@@ -510,7 +533,7 @@ async function reconcileResource(
         message: `Restore Job ${jobName} created for backup ${backupId}`,
         lastTransitionTime: new Date().toISOString(),
       }],
-    });
+    }, undefined, generation);
 
     log.debug('BackupRestore reconciliation completed successfully');
   } catch (error) {
@@ -529,8 +552,16 @@ async function updateBackupRestoreStatus(
   namespace: string,
   name: string,
   status: Record<string, unknown>,
-  terminal: boolean = false
+  terminal: boolean = false,
+  generation?: number
 ): Promise<void> {
+  // Inject observedGeneration into each condition
+  if (generation !== undefined && Array.isArray(status.conditions)) {
+    for (const condition of status.conditions as Array<Record<string, unknown>>) {
+      condition.observedGeneration = generation;
+    }
+  }
+
   try {
     await customObjectsApi.patchNamespacedCustomObjectStatus({
       group: eevee.BackupRestore.details.group,

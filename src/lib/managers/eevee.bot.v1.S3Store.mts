@@ -32,6 +32,28 @@ export const managedCrds: managedCrd[] = [
 async function handleResourceEvent(event: ResourceEvent): Promise<void> {
   log.debug('Received S3Store resource event:', event);
 
+  // Skip reconciliation if only status changed (our own status update bounced back).
+  // generation increments on spec changes; observedGeneration records which generation
+  // we last reconciled. If they match and status is terminal, this is a status-only update.
+  if (event.type === ResourceEventType.Modified) {
+    const obj = event.object as eevee.S3Store.S3StoreResource;
+    const currentGeneration = obj.metadata?.generation;
+    const observedGeneration = obj.status?.conditions?.[0]?.observedGeneration;
+    const currentStatus = obj.status?.conditions?.[0]?.status;
+
+    if (
+      currentGeneration !== undefined &&
+      observedGeneration !== undefined &&
+      currentGeneration === observedGeneration &&
+      currentStatus !== 'Unknown'
+    ) {
+      log.debug(
+        `Skipping S3Store "${event.meta.name}" reconciliation — generation unchanged (observed=${observedGeneration}, current=${currentGeneration})`
+      );
+      return;
+    }
+  }
+
   // Track Kubernetes resource events
   k8sResourceEventsTotal.inc({
     resource_type: 'S3Store',
@@ -116,6 +138,7 @@ async function reconcileResource(
     const item = s3StoreResponse as eevee.S3Store.S3StoreResource;
     const namespace = item.metadata?.namespace;
     const name = item.metadata?.name;
+    const generation = item.metadata?.generation;
 
     if (!namespace || !name) {
       log.debug('Skipping S3Store resource with missing namespace or name');
@@ -138,7 +161,7 @@ async function reconcileResource(
             type: 'Ready',
           },
         ],
-      });
+      }, generation);
       return;
     }
 
@@ -204,7 +227,7 @@ async function reconcileResource(
             type: 'Ready',
           },
         ],
-      });
+      }, generation);
       return;
     }
 
@@ -231,7 +254,7 @@ async function reconcileResource(
             type: 'Ready',
           },
         ],
-      });
+      }, generation);
     } else {
       log.warn(`S3Store "${name}" connection test failed`);
       await updateS3StoreStatus(customObjectsApi, namespace, name, {
@@ -244,7 +267,7 @@ async function reconcileResource(
             type: 'Ready',
           },
         ],
-      });
+      }, generation);
     }
 
     log.debug('S3Store reconciliation completed successfully');
@@ -309,8 +332,16 @@ async function updateS3StoreStatus(
   customObjectsApi: K8s.CustomObjectsApi,
   namespace: string,
   name: string,
-  status: Record<string, unknown>
+  status: Record<string, unknown>,
+  generation?: number
 ): Promise<void> {
+  // Inject observedGeneration into each condition
+  if (generation !== undefined && Array.isArray(status.conditions)) {
+    for (const condition of status.conditions as Array<Record<string, unknown>>) {
+      condition.observedGeneration = generation;
+    }
+  }
+
   try {
     await customObjectsApi.patchNamespacedCustomObjectStatus({
       group: eevee.S3Store.details.group,

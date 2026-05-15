@@ -48,8 +48,30 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
         message: 'spec.moduleName is required',
         lastTransitionTime: new Date().toISOString(),
       }],
-    }, true);
+    }, true, (event.object as eevee.BotModule.BotModuleResource)?.metadata?.generation);
     return;
+  }
+
+  // Skip reconciliation if only status changed (our own status update bounced back).
+  // generation increments on spec changes; observedGeneration records which generation
+  // we last reconciled. If they match and status is terminal, this is a status-only update.
+  if (event.type === ResourceEventType.Modified) {
+    const obj = event.object as eevee.BotModule.BotModuleResource;
+    const currentGeneration = obj.metadata?.generation;
+    const observedGeneration = obj.status?.conditions?.[0]?.observedGeneration;
+    const currentStatus = obj.status?.conditions?.[0]?.status;
+
+    if (
+      currentGeneration !== undefined &&
+      observedGeneration !== undefined &&
+      currentGeneration === observedGeneration &&
+      currentStatus !== 'Unknown'
+    ) {
+      log.debug(
+        `Skipping BotModule "${moduleName}" reconciliation — generation unchanged (observed=${observedGeneration}, current=${currentGeneration})`
+      );
+      return;
+    }
   }
 
   // Track Kubernetes resource events
@@ -202,7 +224,7 @@ async function reconcileResource(
         message: 'spec.moduleName is required',
         lastTransitionTime: new Date().toISOString(),
       }],
-    }, true);
+    }, true, (event.object as eevee.BotModule.BotModuleResource)?.metadata?.generation);
     return;
   }
   if (!kc) {
@@ -248,6 +270,7 @@ async function reconcileResource(
     const item = botModuleResponse as eevee.BotModule.BotModuleResource;
     const namespace = item.metadata?.namespace;
     const name = item.metadata?.name;
+    const generation = item.metadata?.generation;
 
     if (!namespace || !name) {
       log.debug('Skipping BotModule resource with missing namespace or name');
@@ -263,7 +286,7 @@ async function reconcileResource(
         message: 'Reconciling',
         lastTransitionTime: new Date().toISOString(),
       }],
-    });
+    }, undefined, generation);
 
     // Generate deployment name based on botmodule custom resource object name
     const deploymentName = `eevee-${name}-module`;
@@ -288,7 +311,7 @@ async function reconcileResource(
       );
 
       // Update the deployment if it exists
-      await updateModuleDeployment(appsV1Api, customObjectsApi, namespace, name, item);
+      await updateModuleDeployment(appsV1Api, customObjectsApi, namespace, name, item, generation);
 
       // Check deployment health and set status accordingly
       await updateBotModuleStatusFromDeployment(
@@ -296,7 +319,8 @@ async function reconcileResource(
         customObjectsApi,
         namespace,
         name,
-        deploymentName
+        deploymentName,
+        generation
       );
 
       // If bootstrapFromBackup is set and PVC exists, proactively mark it bootstrapped.
@@ -314,7 +338,8 @@ async function reconcileResource(
           namespace,
           name,
           pvcName,
-          item
+          item,
+          generation
         );
         if (!bootstrapped) {
           log.warn(
@@ -329,7 +354,7 @@ async function reconcileResource(
       log.info(
         `Creating deployment ${deploymentName} in namespace ${namespace}`
       );
-      await createModuleDeployment(appsV1Api, coreV1Api, customObjectsApi, namespace, name, item);
+      await createModuleDeployment(appsV1Api, coreV1Api, customObjectsApi, namespace, name, item, generation);
 
       // Set status to Creating — deployment was just created, may not be ready yet
       await updateBotModuleStatus(customObjectsApi, namespace, name, {
@@ -340,7 +365,7 @@ async function reconcileResource(
           message: 'Deployment created',
           lastTransitionTime: new Date().toISOString(),
         }],
-      });
+      }, undefined, generation);
     }
 
     // Validate backupSchedule reference if set
@@ -360,7 +385,8 @@ async function createModuleDeployment(
   customObjectsApi: K8s.CustomObjectsApi,
   namespace: string,
   moduleName: string,
-  item: eevee.BotModule.BotModuleResource
+  item: eevee.BotModule.BotModuleResource,
+  generation?: number
 ): Promise<void> {
   log.debug(
     `Creating module deployment for "${moduleName}" in namespace ${namespace}`
@@ -428,7 +454,7 @@ async function createModuleDeployment(
         message: 'spec.image is required',
         lastTransitionTime: new Date().toISOString(),
       }],
-    }, true);
+    }, true, generation);
     return;
   }
 
@@ -780,7 +806,8 @@ async function updateModuleDeployment(
   customObjectsApi: K8s.CustomObjectsApi,
   namespace: string,
   moduleName: string,
-  item: eevee.BotModule.BotModuleResource
+  item: eevee.BotModule.BotModuleResource,
+  generation?: number
 ): Promise<void> {
   log.debug(
     `Updating module deployment for "${moduleName}" in namespace ${namespace}`
@@ -811,7 +838,7 @@ async function updateModuleDeployment(
         message: 'Module is disabled',
         lastTransitionTime: new Date().toISOString(),
       }],
-    });
+    }, undefined, generation);
     return;
   }
 
@@ -866,7 +893,7 @@ async function updateModuleDeployment(
         message: 'spec.image is required',
         lastTransitionTime: new Date().toISOString(),
       }],
-    }, true);
+    }, true, generation);
     return;
   }
 
@@ -1159,7 +1186,8 @@ async function handleBootstrapFromBackup(
   namespace: string,
   moduleName: string,
   pvcName: string,
-  item: eevee.BotModule.BotModuleResource
+  item: eevee.BotModule.BotModuleResource,
+  generation?: number
 ): Promise<boolean> {
   const bootstrapConfig = item.spec?.bootstrapFromBackup;
   if (!bootstrapConfig) {
@@ -1194,7 +1222,7 @@ async function handleBootstrapFromBackup(
         message: 'Incomplete bootstrapFromBackup config (missing s3Store name)',
         lastTransitionTime: new Date().toISOString(),
       }],
-    });
+    }, undefined, generation);
     return false;
   }
 
@@ -1226,7 +1254,7 @@ async function handleBootstrapFromBackup(
           message: msg,
           lastTransitionTime: new Date().toISOString(),
         }],
-      });
+      }, undefined, generation);
       return false;
     }
   } catch (error) {
@@ -1242,7 +1270,7 @@ async function handleBootstrapFromBackup(
         message: `Failed to resolve s3store "${s3StoreName}"`,
         lastTransitionTime: new Date().toISOString(),
       }],
-    });
+    }, undefined, generation);
     return false;
   }
 
@@ -1256,7 +1284,7 @@ async function handleBootstrapFromBackup(
         message: `s3store "${s3StoreName}" has no spec`,
         lastTransitionTime: new Date().toISOString(),
       }],
-    });
+    }, undefined, generation);
     return false;
   }
 
@@ -1300,7 +1328,7 @@ async function handleBootstrapFromBackup(
         message: 'Failed to resolve S3 credentials from Secrets',
         lastTransitionTime: new Date().toISOString(),
       }],
-    });
+    }, undefined, generation);
     return false;
   }
 
@@ -1329,7 +1357,7 @@ async function handleBootstrapFromBackup(
         message: `Waiting for backup: no backups found for module "${botModuleName}" in s3store "${s3StoreName}"`,
         lastTransitionTime: new Date().toISOString(),
       }],
-    });
+    }, undefined, generation);
     return false;
   }
 
@@ -1459,7 +1487,7 @@ async function handleBootstrapFromBackup(
             message: 'Bootstrap restore Job failed (Job retained for inspection)',
             lastTransitionTime: new Date().toISOString(),
           }],
-        });
+        }, undefined, generation);
         return false;
       }
 
@@ -1482,7 +1510,7 @@ async function handleBootstrapFromBackup(
         message: `Restoring from backup ${backupId}`,
         lastTransitionTime: new Date().toISOString(),
       }],
-    });
+    }, undefined, generation);
     await batchV1Api.createNamespacedJob({ namespace: namespace, body: job });
   } catch (error) {
     log.warn(
@@ -1497,7 +1525,7 @@ async function handleBootstrapFromBackup(
         message: `Failed to create bootstrap restore Job: ${error}`,
         lastTransitionTime: new Date().toISOString(),
       }],
-    });
+    }, undefined, generation);
     return false;
   }
 
@@ -1550,7 +1578,7 @@ async function handleBootstrapFromBackup(
             message: 'Bootstrap restore Job failed',
             lastTransitionTime: new Date().toISOString(),
           }],
-        });
+        }, undefined, generation);
         return false;
       }
     } catch (error) {
@@ -1571,7 +1599,7 @@ async function handleBootstrapFromBackup(
       message: `Bootstrap restore Job timed out after ${maxWaitMs / 1000}s`,
       lastTransitionTime: new Date().toISOString(),
     }],
-  });
+  }, undefined, generation);
   return false;
 }
 
@@ -1710,8 +1738,17 @@ async function updateBotModuleStatus(
   namespace: string,
   name: string,
   status: Record<string, unknown>,
-  terminal?: boolean
+  terminal?: boolean,
+  generation?: number
 ): Promise<void> {
+  // Inject observedGeneration into each condition so the reconciliation
+  // guard can detect status-only updates and break the loop.
+  if (generation !== undefined && Array.isArray(status.conditions)) {
+    for (const condition of status.conditions as Array<Record<string, unknown>>) {
+      condition.observedGeneration = generation;
+    }
+  }
+
   try {
     await customObjectsApi.patchNamespacedCustomObjectStatus({
       group: eevee.BotModule.details.group,
@@ -1770,6 +1807,7 @@ async function updateBotModuleStatusFromDeployment(
   namespace: string,
   name: string,
   deploymentName: string,
+  generation?: number
 ): Promise<void> {
   try {
     const deployment = await appsV1Api.readNamespacedDeployment({
@@ -1791,7 +1829,7 @@ async function updateBotModuleStatusFromDeployment(
           message: `Deployment ready (${available}/${replicas} replicas available)`,
           lastTransitionTime: new Date().toISOString(),
         }],
-      });
+      }, undefined, generation);
     } else if (unavailable > 0) {
       await updateBotModuleStatus(customObjectsApi, namespace, name, {
         conditions: [{
@@ -1801,7 +1839,7 @@ async function updateBotModuleStatusFromDeployment(
           message: `Deployment unavailable (${unavailable} unavailable replica(s), ${available} available)`,
           lastTransitionTime: new Date().toISOString(),
         }],
-      });
+      }, undefined, generation);
     } else if (replicas > 0 && available === 0) {
       // Rolling out — no replicas available yet but not explicitly unavailable
       await updateBotModuleStatus(customObjectsApi, namespace, name, {
@@ -1812,7 +1850,7 @@ async function updateBotModuleStatusFromDeployment(
           message: `Deployment updating (${updated}/${replicas} updated)`,
           lastTransitionTime: new Date().toISOString(),
         }],
-      });
+      }, undefined, generation);
     } else {
       await updateBotModuleStatus(customObjectsApi, namespace, name, {
         conditions: [{
@@ -1822,7 +1860,7 @@ async function updateBotModuleStatusFromDeployment(
           message: 'Deployment exists',
           lastTransitionTime: new Date().toISOString(),
         }],
-      });
+      }, undefined, generation);
     }
   } catch (error) {
     log.warn(

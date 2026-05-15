@@ -31,6 +31,28 @@ export const managedCrds: managedCrd[] = [
 async function handleResourceEvent(event: ResourceEvent): Promise<void> {
   log.debug('Received BackupSchedule resource event:', event);
 
+  // Skip reconciliation if only status changed (our own status update bounced back).
+  // generation increments on spec changes; observedGeneration records which generation
+  // we last reconciled. If they match and status is terminal, this is a status-only update.
+  if (event.type === ResourceEventType.Modified) {
+    const obj = event.object as eevee.BackupSchedule.BackupScheduleResource;
+    const currentGeneration = obj.metadata?.generation;
+    const observedGeneration = obj.status?.conditions?.[0]?.observedGeneration;
+    const currentStatus = obj.status?.conditions?.[0]?.status;
+
+    if (
+      currentGeneration !== undefined &&
+      observedGeneration !== undefined &&
+      currentGeneration === observedGeneration &&
+      currentStatus !== 'Unknown'
+    ) {
+      log.debug(
+        `Skipping BackupSchedule "${event.meta.name}" reconciliation — generation unchanged (observed=${observedGeneration}, current=${currentGeneration})`
+      );
+      return;
+    }
+  }
+
   // Track Kubernetes resource events
   k8sResourceEventsTotal.inc({
     resource_type: 'BackupSchedule',
@@ -116,6 +138,7 @@ async function reconcileResource(
     const namespace = item.metadata?.namespace;
     const name = item.metadata?.name;
     const uid = item.metadata?.uid;
+    const generation = item.metadata?.generation;
 
     if (!namespace || !name || !uid) {
       log.debug('Skipping BackupSchedule resource with missing namespace, name, or uid');
@@ -135,7 +158,7 @@ async function reconcileResource(
             lastTransitionTime: new Date().toISOString(),
           },
         ],
-      }, true);
+      }, true, generation);
       return;
     }
 
@@ -170,7 +193,7 @@ async function reconcileResource(
             message: msg,
             lastTransitionTime: new Date().toISOString(),
           }],
-        }, true);
+        }, true, generation);
         return;
       }
     } catch (error) {
@@ -185,7 +208,7 @@ async function reconcileResource(
             lastTransitionTime: new Date().toISOString(),
           },
         ],
-      }, true);
+      }, true, generation);
       return;
     }
 
@@ -201,7 +224,7 @@ async function reconcileResource(
             lastTransitionTime: new Date().toISOString(),
           },
         ],
-      }, true);
+      }, true, generation);
       return;
     }
 
@@ -265,7 +288,7 @@ async function reconcileResource(
             lastTransitionTime: new Date().toISOString(),
           },
         ],
-      }, true);
+      }, true, generation);
       return;
     }
 
@@ -434,7 +457,7 @@ async function reconcileResource(
           lastTransitionTime: new Date().toISOString(),
         },
       ],
-    }, true);
+    }, true, generation);
 
     log.debug('BackupSchedule reconciliation completed successfully');
   } catch (error) {
@@ -450,8 +473,16 @@ async function updateBackupScheduleStatus(
   namespace: string,
   name: string,
   status: Record<string, unknown>,
-  terminal: boolean = false
+  terminal: boolean = false,
+  generation?: number
 ): Promise<void> {
+  // Inject observedGeneration into each condition
+  if (generation !== undefined && Array.isArray(status.conditions)) {
+    for (const condition of status.conditions as Array<Record<string, unknown>>) {
+      condition.observedGeneration = generation;
+    }
+  }
+
   try {
     await customObjectsApi.patchNamespacedCustomObjectStatus({
       group: eevee.BackupSchedule.details.group,
