@@ -5,9 +5,8 @@ import { ResourceEvent, ResourceEventType } from '@thehonker/k8s-operator';
 import * as K8s from '@kubernetes/client-node';
 
 import { log } from '../../lib/logging.mjs';
-import { resolveSecretKey, findLatestBackup, validateSecretNamespace } from '../../lib/functions.mjs';
+import { resolveSecretKey, findLatestBackup, validateSecretNamespace, strategicMergePatchOptions, mergePatchOptions, parseBool } from '../../lib/functions.mjs';
 import { managedCrd } from '../../lib/managers/types.mjs';
-import { parseBool } from '../../lib/functions.mjs';
 import { k8sResourceEventsTotal } from '../../lib/metrics.mjs';
 
 // Create KubeConfig for this manager
@@ -542,7 +541,7 @@ async function updateBackupRestoreStatus(
       body: {
         status: status,
       },
-    });
+    }, mergePatchOptions);
 
     if (terminal) {
       await setReconcileLast(customObjectsApi, namespace, name);
@@ -574,7 +573,7 @@ async function setReconcileLast(
           },
         },
       },
-    });
+    }, mergePatchOptions);
   } catch (error) {
     log.debug('Failed to set reconcile-last annotation:', error);
   }
@@ -600,7 +599,7 @@ async function ensureRestorePvcBootstrapped(
           },
         },
       },
-    });
+    }, strategicMergePatchOptions);
     log.debug(`Set bootstrapped annotation on PVC ${pvcName} after restore`);
   } catch (error) {
     log.debug(

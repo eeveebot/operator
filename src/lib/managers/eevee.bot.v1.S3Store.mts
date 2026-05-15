@@ -6,7 +6,7 @@ import * as K8s from '@kubernetes/client-node';
 import { ListObjectsV2Command } from '@aws-sdk/client-s3';
 
 import { log } from '../../lib/logging.mjs';
-import { resolveSecretKey, parseBool, createS3Client, validateSecretNamespace } from '../../lib/functions.mjs';
+import { resolveSecretKey, parseBool, createS3Client, validateSecretNamespace, mergePatchOptions } from '../../lib/functions.mjs';
 import { managedCrd } from '../../lib/managers/types.mjs';
 import { k8sResourceEventsTotal } from '../../lib/metrics.mjs';
 
@@ -264,7 +264,7 @@ async function reconcileResource(
             },
           },
         },
-      });
+      }, mergePatchOptions);
     } catch (error) {
       log.debug('Failed to set reconcile-last annotation:', error);
     }
@@ -321,7 +321,7 @@ async function updateS3StoreStatus(
       body: {
         status: status,
       },
-    });
+    }, mergePatchOptions);
   } catch (error) {
     log.error(
       `Failed to update status for S3Store "${name}" in namespace "${namespace}":`,

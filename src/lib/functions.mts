@@ -1,6 +1,7 @@
 'use strict';
 
 import * as K8s from '@kubernetes/client-node';
+import { setHeaderOptions } from '@kubernetes/client-node';
 import { S3Client, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { log } from './logging.mjs';
 
@@ -147,6 +148,25 @@ export async function findLatestBackup(
     return undefined;
   }
 }
+
+/**
+ * ConfigurationOptions for strategic-merge-patch (built-in K8s resources).
+ * The @kubernetes/client-node v1.x defaults to application/json-patch+json
+ * which requires an array body; our patch calls use merge-patch objects.
+ */
+export const strategicMergePatchOptions = setHeaderOptions(
+  'Content-Type',
+  'application/strategic-merge-patch+json'
+);
+
+/**
+ * ConfigurationOptions for merge-patch+json (CRs / status subresources).
+ * Custom resources do not support strategic merge — use standard merge-patch.
+ */
+export const mergePatchOptions = setHeaderOptions(
+  'Content-Type',
+  'application/merge-patch+json'
+);
 
 /**
  * Validate that a cross-namespace secret reference is not trying to escape

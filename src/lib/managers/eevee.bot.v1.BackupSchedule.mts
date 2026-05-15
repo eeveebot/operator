@@ -6,7 +6,7 @@ import * as K8s from '@kubernetes/client-node';
 
 import { log } from '../../lib/logging.mjs';
 import { managedCrd } from '../../lib/managers/types.mjs';
-import { parseBool, validateSecretNamespace } from '../../lib/functions.mjs';
+import { parseBool, validateSecretNamespace, strategicMergePatchOptions, mergePatchOptions } from '../../lib/functions.mjs';
 import { k8sResourceEventsTotal } from '../../lib/metrics.mjs';
 
 // Create KubeConfig for this manager
@@ -381,7 +381,7 @@ async function reconcileResource(
           name: cronJobName,
           namespace: namespace,
           body: cronJob,
-        });
+        }, strategicMergePatchOptions);
         log.info(`Patched CronJob ${cronJobName} in namespace ${namespace}`);
       } catch {
         log.info(`Creating CronJob ${cronJobName} in namespace ${namespace}`);
@@ -462,7 +462,7 @@ async function updateBackupScheduleStatus(
       body: {
         status: status,
       },
-    });
+    }, mergePatchOptions);
 
     if (terminal) {
       await setReconcileLast(customObjectsApi, namespace, name);
@@ -494,7 +494,7 @@ async function setReconcileLast(
           },
         },
       },
-    });
+    }, mergePatchOptions);
   } catch (error) {
     log.debug('Failed to set reconcile-last annotation:', error);
   }

@@ -8,7 +8,7 @@ import * as crypto from 'crypto';
 
 import { log } from '../../lib/logging.mjs';
 import { managedCrd } from '../../lib/managers/types.mjs';
-import { parseBool, validateSecretNamespace } from '../../lib/functions.mjs';
+import { parseBool, validateSecretNamespace, strategicMergePatchOptions, mergePatchOptions } from '../../lib/functions.mjs';
 import { k8sResourceEventsTotal } from '../../lib/metrics.mjs';
 
 // Create KubeConfig for this manager
@@ -657,7 +657,7 @@ async function updateNatsDeployment(
           },
         },
       },
-    });
+    }, strategicMergePatchOptions);
     log.info(`Updated NATS deployment ${deploymentName} in namespace ${namespace}`);
   } catch (error) {
     log.error(`Failed to update NATS deployment ${deploymentName}:`, error);
@@ -791,7 +791,7 @@ store_dir: "/tmp/nats"
         body: {
           stringData: configSecret.stringData,
         },
-      });
+      }, strategicMergePatchOptions);
       log.info(
         `Successfully patched Secret ${configSecretName} in namespace ${namespace}`
       );
@@ -923,7 +923,7 @@ async function createOrUpdateNatsService(
           name: serviceName,
           namespace: namespace,
           body: desiredService,
-        });
+        }, strategicMergePatchOptions);
         log.info(
           `Successfully patched service ${serviceName} in namespace ${namespace}`
         );
@@ -980,7 +980,7 @@ async function updateIpcConfigStatus(
       body: {
         status: status,
       },
-    });
+    }, mergePatchOptions);
   } catch (error) {
     log.error(
       `Failed to update status for IpcConfig "${name}" in namespace "${namespace}":`,

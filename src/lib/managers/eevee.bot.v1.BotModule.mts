@@ -5,7 +5,7 @@ import { ResourceEvent, ResourceEventType } from '@thehonker/k8s-operator';
 import * as K8s from '@kubernetes/client-node';
 
 import { log } from '../../lib/logging.mjs';
-import { resolveSecretKey, findLatestBackup, validateSecretNamespace } from '../../lib/functions.mjs';
+import { resolveSecretKey, findLatestBackup, validateSecretNamespace, strategicMergePatchOptions, mergePatchOptions } from '../../lib/functions.mjs';
 import { managedCrd } from '../../lib/managers/types.mjs';
 import { parseBool } from '../../lib/functions.mjs';
 import { k8sResourceEventsTotal } from '../../lib/metrics.mjs';
@@ -160,7 +160,7 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
                     },
                   },
                 },
-              });
+              }, mergePatchOptions);
               log.debug(
                 `Triggered reconciliation of BackupSchedule "${scheduleName}" after BotModule deletion`
               );
@@ -662,7 +662,7 @@ async function createModuleDeployment(
               body: {
                 data: configMap.data,
               },
-            });
+            }, strategicMergePatchOptions);
             log.info(
               `Patched ConfigMap ${configMapName} in namespace ${namespace}`
             );
@@ -982,7 +982,7 @@ async function updateModuleDeployment(
           },
         },
       },
-    });
+    }, strategicMergePatchOptions);
 
     log.info(
       `Patched deployment ${deploymentName} in namespace ${namespace}`
@@ -1016,7 +1016,7 @@ async function updateModuleDeployment(
           body: {
             data: configMap.data,
           },
-        });
+        }, strategicMergePatchOptions);
         log.info(
           `Patched ConfigMap ${configMapName} in namespace ${namespace}`
         );
@@ -1098,7 +1098,7 @@ async function validateAndTriggerBackupScheduleReconcile(
               : { 'eevee.bot/backup-schedule': null },
           },
         },
-      });
+      }, mergePatchOptions);
     } catch (error) {
       log.debug('Failed to update backup-schedule label on botmodule:', error);
     }
@@ -1135,7 +1135,7 @@ async function validateAndTriggerBackupScheduleReconcile(
           },
         },
       },
-    });
+    }, mergePatchOptions);
     log.debug(
       `Triggered reconciliation of BackupSchedule "${scheduleName}" via annotation`
     );
@@ -1608,7 +1608,7 @@ async function ensurePvc(
                 : { 'eevee.bot/backup-schedule': null },
             },
           },
-        });
+        }, strategicMergePatchOptions);
       } catch (error) {
         log.debug('Failed to update backup-schedule label on PVC:', error);
       }
@@ -1692,7 +1692,7 @@ async function ensurePvcBootstrappedAnnotation(
           },
         },
       },
-    });
+    }, strategicMergePatchOptions);
     log.debug(`Set bootstrapped annotation on PVC ${pvcName}`);
   } catch (error) {
     log.debug(
@@ -1722,7 +1722,7 @@ async function updateBotModuleStatus(
       body: {
         status: status,
       },
-    });
+    }, mergePatchOptions);
 
     if (terminal) {
       await setReconcileLast(customObjectsApi, namespace, name);
@@ -1754,7 +1754,7 @@ async function setReconcileLast(
           },
         },
       },
-    });
+    }, mergePatchOptions);
   } catch (error) {
     log.debug('Failed to set reconcile-last annotation:', error);
   }
