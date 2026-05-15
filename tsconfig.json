@@ -14,9 +14,10 @@
     "useUnknownInCatchVariables": false,
     "declaration": true,
     "moduleResolution": "nodenext",
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true
   },
   "include": [
-    "**/*.mts",
+    "**/*.mts"
   ]
 }
