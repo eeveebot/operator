@@ -5,7 +5,7 @@ import { ResourceEvent, ResourceEventType } from '@thehonker/k8s-operator';
 import * as K8s from '@kubernetes/client-node';
 
 import { log } from '../../lib/logging.mjs';
-import { resolveSecretKey, findLatestBackup } from '../../lib/functions.mjs';
+import { resolveSecretKey, findLatestBackup, validateSecretNamespace } from '../../lib/functions.mjs';
 import { managedCrd } from '../../lib/managers/types.mjs';
 import { parseBool } from '../../lib/functions.mjs';
 import { k8sResourceEventsTotal } from '../../lib/metrics.mjs';
@@ -114,7 +114,7 @@ async function reconcileResource(
       return;
     }
 
-    const item = restoreResponse as eevee.BackupRestore.backuprestoreResource;
+    const item = restoreResponse as eevee.BackupRestore.BackupRestoreResource;
     const namespace = item.metadata?.namespace;
     const name = item.metadata?.name;
     const uid = item.metadata?.uid;
@@ -127,11 +127,22 @@ async function reconcileResource(
     const spec = item.spec;
     if (!spec?.botModule || !spec?.s3Store || !spec?.image) {
       log.warn(`BackupRestore "${name}" is missing required spec fields`);
+      await updateBackupRestoreStatus(customObjectsApi, namespace, name, {
+        conditions: [
+          {
+            type: 'Ready',
+            status: 'False',
+            reason: 'InvalidSpec',
+            message: 'Missing required spec fields (botModule, s3Store, image)',
+            lastTransitionTime: new Date().toISOString(),
+          },
+        ],
+      }, true);
       return;
     }
 
     // If status is already terminal (Ready=True or Ready=False), skip reconciliation
-    const currentConditions = (item.status as unknown as { conditions?: { type: string; status: string; reason: string }[] })?.conditions;
+    const currentConditions = (item.status as unknown as { conditions?: { type: string; status: string; reason: string; message?: string }[] })?.conditions;
     const readyCondition = currentConditions?.find(c => c.type === 'Ready');
     if (readyCondition && readyCondition.status !== 'Unknown') {
       log.debug(`BackupRestore "${name}" is in terminal state (${readyCondition.status}/${readyCondition.reason}) — skipping`);
@@ -169,7 +180,7 @@ async function reconcileResource(
             message: `Restore Job ${jobName} succeeded`,
             lastTransitionTime: new Date().toISOString(),
           }],
-        });
+        }, true);
         return;
       }
 
@@ -183,7 +194,7 @@ async function reconcileResource(
             message: `Restore Job ${jobName} failed`,
             lastTransitionTime: new Date().toISOString(),
           }],
-        });
+        }, true);
         return;
       }
 
@@ -219,17 +230,35 @@ async function reconcileResource(
         plural: eevee.BotModule.details.plural,
         name: botModuleName,
       });
-      const botModuleItem = botModuleResponse as eevee.BotModule.botmoduleResource;
+      const botModuleItem = botModuleResponse as eevee.BotModule.BotModuleResource;
       moduleName = botModuleItem.spec?.moduleName || botModuleItem.metadata?.name;
       volumeMountPath = botModuleItem.spec?.volumeMountPath || '/data';
       pvcName = `eevee-${botModuleItem.metadata?.name}-module-pvc`;
     } catch (error) {
       log.warn(`Failed to resolve botmodule "${botModuleName}" for BackupRestore "${name}":`, error);
+      await updateBackupRestoreStatus(customObjectsApi, namespace, name, {
+        conditions: [{
+          type: 'Ready',
+          status: 'False',
+          reason: 'BotModuleNotFound',
+          message: `Failed to resolve botmodule "${botModuleName}"`,
+          lastTransitionTime: new Date().toISOString(),
+        }],
+      }, true);
       return;
     }
 
     if (!moduleName) {
       log.warn(`botmodule "${botModuleName}" has no moduleName`);
+      await updateBackupRestoreStatus(customObjectsApi, namespace, name, {
+        conditions: [{
+          type: 'Ready',
+          status: 'False',
+          reason: 'BotModuleInvalid',
+          message: `botmodule "${botModuleName}" has no moduleName`,
+          lastTransitionTime: new Date().toISOString(),
+        }],
+      }, true);
       return;
     }
 
@@ -237,7 +266,7 @@ async function reconcileResource(
     const s3StoreName = spec.s3Store.name;
     log.debug(`Resolving s3store "${s3StoreName}" for BackupRestore "${name}"`);
 
-    let s3StoreSpec: eevee.S3Store.s3storeSpec | undefined;
+    let s3StoreSpec: eevee.S3Store.S3StoreSpec | undefined;
     try {
       const s3StoreResponse = await customObjectsApi.getNamespacedCustomObject({
         group: eevee.S3Store.details.group,
@@ -246,15 +275,52 @@ async function reconcileResource(
         plural: eevee.S3Store.details.plural,
         name: s3StoreName,
       });
-      const s3StoreItem = s3StoreResponse as eevee.S3Store.s3storeResource;
+      const s3StoreItem = s3StoreResponse as eevee.S3Store.S3StoreResource;
       s3StoreSpec = s3StoreItem.spec;
+
+      // Check that the S3Store is Ready (connection test passed)
+      const s3StoreConditions = (s3StoreItem.status as unknown as { conditions?: { type: string; status: string; reason: string; message?: string }[] })?.conditions;
+      const s3Ready = s3StoreConditions?.find(c => c.type === 'Ready');
+      if (!s3Ready || s3Ready.status !== 'True') {
+        const reason = s3Ready?.reason || 'S3StoreNotReady';
+        const msg = s3Ready?.message || `S3Store "${s3StoreName}" is not ready`;
+        log.warn(`S3Store "${s3StoreName}" is not ready (${reason}) for BackupRestore "${name}"`);
+        await updateBackupRestoreStatus(customObjectsApi, namespace, name, {
+          conditions: [{
+            type: 'Ready',
+            status: 'False',
+            reason: 'S3StoreNotReady',
+            message: msg,
+            lastTransitionTime: new Date().toISOString(),
+          }],
+        }, true);
+        return;
+      }
     } catch (error) {
       log.warn(`Failed to resolve s3store "${s3StoreName}" for BackupRestore "${name}":`, error);
+      await updateBackupRestoreStatus(customObjectsApi, namespace, name, {
+        conditions: [{
+          type: 'Ready',
+          status: 'False',
+          reason: 'S3StoreNotFound',
+          message: `Failed to resolve s3store "${s3StoreName}"`,
+          lastTransitionTime: new Date().toISOString(),
+        }],
+      }, true);
       return;
     }
 
     if (!s3StoreSpec) {
       log.warn(`s3store "${s3StoreName}" has no spec`);
+      await updateBackupRestoreStatus(customObjectsApi, namespace, name, {
+        conditions: [{
+          type: 'Ready',
+          status: 'False',
+          reason: 'S3StoreInvalid',
+          message: `s3store "${s3StoreName}" has no spec`,
+          lastTransitionTime: new Date().toISOString(),
+        }],
+      }, true);
       return;
     }
 
@@ -265,6 +331,12 @@ async function reconcileResource(
       // Find the latest backup by listing S3 objects
       log.info(`No backupId specified — finding latest backup for module "${moduleName}"`);
 
+      validateSecretNamespace(
+        s3StoreSpec.accessId?.secretKeyRef?.secret?.name!,
+        s3StoreSpec.accessId?.secretKeyRef?.secret?.namespace,
+        namespace,
+        `BackupRestore "${name}" accessId`
+      );
       const accessId = await resolveSecretKey(
         coreV1Api,
         namespace,
@@ -273,6 +345,12 @@ async function reconcileResource(
         s3StoreSpec.accessId?.secretKeyRef?.key!
       );
 
+      validateSecretNamespace(
+        s3StoreSpec.accessKey?.secretKeyRef?.secret?.name!,
+        s3StoreSpec.accessKey?.secretKeyRef?.secret?.namespace,
+        namespace,
+        `BackupRestore "${name}" accessKey`
+      );
       const secretKey = await resolveSecretKey(
         coreV1Api,
         namespace,
@@ -283,6 +361,15 @@ async function reconcileResource(
 
       if (!accessId || !secretKey) {
         log.warn(`Cannot resolve S3 credentials to list backups for BackupRestore "${name}"`);
+        await updateBackupRestoreStatus(customObjectsApi, namespace, name, {
+          conditions: [{
+            type: 'Ready',
+            status: 'False',
+            reason: 'SecretNotFound',
+            message: 'Failed to resolve S3 credentials from Secrets',
+            lastTransitionTime: new Date().toISOString(),
+          }],
+        }, true);
         return;
       }
 
@@ -294,7 +381,8 @@ async function reconcileResource(
         s3StoreSpec.prefix || '',
         namespace,
         moduleName,
-        s3StoreSpec.pathStyle || false
+        s3StoreSpec.pathStyle || false,
+        s3StoreSpec.region
       );
 
       if (!backupId) {
@@ -307,7 +395,7 @@ async function reconcileResource(
             message: `No backups found for module "${moduleName}" in s3store "${s3StoreName}"`,
             lastTransitionTime: new Date().toISOString(),
           }],
-        });
+        }, true);
         return;
       }
 
@@ -326,6 +414,7 @@ async function reconcileResource(
       { name: 'S3_BUCKET', value: s3StoreSpec.bucket },
       { name: 'S3_PREFIX', value: s3StoreSpec.prefix || '' },
       { name: 'S3_PATH_STYLE', value: String(s3StoreSpec.pathStyle || false) },
+      { name: 'S3_SIGNATURE_V2', value: String(s3StoreSpec.signatureV2 || false) },
       { name: 'RESTORE_NAMESPACE', value: namespace },
       { name: 'RESTORE_MODULE', value: moduleName },
       { name: 'RESTORE_BACKUP_ID', value: backupId },
@@ -381,7 +470,7 @@ async function reconcileResource(
         ownerReferences: [
           {
             apiVersion: `${eevee.BackupRestore.details.group}/${eevee.BackupRestore.details.version}`,
-            kind: eevee.BackupRestore.details.plural,
+            kind: eevee.BackupRestore.details.name,
             name: name,
             uid: uid,
             controller: true,
@@ -393,11 +482,13 @@ async function reconcileResource(
         template: {
           spec: {
             restartPolicy: 'OnFailure',
+            activeDeadlineSeconds: 600,
             volumes: volumes,
             containers: [
               {
                 name: 'restore',
                 image: spec.image,
+                imagePullPolicy: spec.imagePullPolicy as K8s.V1Container['imagePullPolicy'] || 'IfNotPresent',
                 command: ['/usr/local/bin/restore.sh'],
                 env: envVars,
                 volumeMounts: volumeMounts,
@@ -431,9 +522,7 @@ async function reconcileResource(
 }
 
 
-/**
- * Find the latest backup UUID for a module by listing S3 objects
-}
+
 
 /**
  * Update the status subresource of a BackupRestore CR.
@@ -442,7 +531,8 @@ async function updateBackupRestoreStatus(
   customObjectsApi: K8s.CustomObjectsApi,
   namespace: string,
   name: string,
-  status: Record<string, unknown>
+  status: Record<string, unknown>,
+  terminal: boolean = false
 ): Promise<void> {
   try {
     await customObjectsApi.patchNamespacedCustomObjectStatus({
@@ -455,11 +545,40 @@ async function updateBackupRestoreStatus(
         status: status,
       },
     });
+
+    if (terminal) {
+      await setReconcileLast(customObjectsApi, namespace, name);
+    }
   } catch (error) {
     log.error(
       `Failed to update status for BackupRestore "${name}" in namespace "${namespace}":`,
       error
     );
+  }
+}
+
+async function setReconcileLast(
+  customObjectsApi: K8s.CustomObjectsApi,
+  namespace: string,
+  name: string
+): Promise<void> {
+  try {
+    await customObjectsApi.patchNamespacedCustomObject({
+      group: eevee.BackupRestore.details.group,
+      version: eevee.BackupRestore.details.version,
+      namespace: namespace,
+      plural: eevee.BackupRestore.details.plural,
+      name: name,
+      body: {
+        metadata: {
+          annotations: {
+            'eevee.bot/reconcile-last': new Date().toISOString(),
+          },
+        },
+      },
+    });
+  } catch (error) {
+    log.debug('Failed to set reconcile-last annotation:', error);
   }
 }
 
@@ -473,19 +592,16 @@ async function ensureRestorePvcBootstrapped(
   pvcName: string,
 ): Promise<void> {
   try {
-    const pvc = await coreV1Api.readNamespacedPersistentVolumeClaim({
+    await coreV1Api.patchNamespacedPersistentVolumeClaim({
       name: pvcName,
       namespace: namespace,
-    });
-
-    pvc.metadata = pvc.metadata || {};
-    pvc.metadata.annotations = pvc.metadata.annotations || {};
-    pvc.metadata.annotations['eevee.bot/bootstrapped'] = 'true';
-
-    await coreV1Api.replaceNamespacedPersistentVolumeClaim({
-      name: pvcName,
-      namespace: namespace,
-      body: pvc,
+      body: {
+        metadata: {
+          annotations: {
+            'eevee.bot/bootstrapped': 'true',
+          },
+        },
+      },
     });
     log.debug(`Set bootstrapped annotation on PVC ${pvcName} after restore`);
   } catch (error) {

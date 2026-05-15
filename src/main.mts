@@ -19,6 +19,9 @@ import { parseBool } from './lib/functions.mjs';
 // Import API routes
 import apiRoutes from './api/routes.mjs';
 
+// Module-level HTTP server reference for graceful shutdown
+let httpServer: ReturnType<Application['listen']> | null = null;
+
 // Import metrics
 import { k8sActiveWatches } from './lib/metrics.mjs';
 
@@ -97,12 +100,12 @@ function setupHttpServer() {
   });
 
   // Start server
-  const server = app.listen(port, () => {
+  httpServer = app.listen(port, () => {
     log.info(`HTTP API server listening on port ${port}`);
   });
 
   // Handle server errors
-  server.on('error', (err) => {
+  httpServer.on('error', (err) => {
     log.error('HTTP API server error', err);
   });
 }
@@ -113,11 +116,14 @@ function setupHttpServer() {
  */
 async function exit(reason: string, exitcode: number = 0) {
   log.info(`exiting due to ${reason}`);
+  if (httpServer) {
+    httpServer.close();
+  }
   if (op) op.stop();
   process.exitCode = exitcode;
   setTimeout(() => {
     log.error('timeout expired, forcing exit');
-    process.exit(exitcode != 0 ? exitcode : 127);
+    process.exit(exitcode || 1);
   }, 5000).unref();
 }
 

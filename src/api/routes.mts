@@ -1,6 +1,8 @@
 'use strict';
 
 import { Router, Request, Response, NextFunction } from 'express';
+import { timingSafeEqual } from 'crypto';
+import rateLimit from 'express-rate-limit';
 import * as K8s from '@kubernetes/client-node';
 import { log } from '../lib/logging.mjs';
 import { parseBool } from '../lib/functions.mjs';
@@ -57,8 +59,10 @@ const authenticateToken = (req: Request, res: Response, next: NextFunction) => {
     return res.status(401).json({ error: 'Invalid authorization format' });
   }
 
-  // Check if token matches
-  if (tokenParts[1] !== token) {
+  // Check if token matches (constant-time comparison to prevent timing attacks)
+  const a = Buffer.from(tokenParts[1]);
+  const b = Buffer.from(token);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) {
     log.warn('Invalid API token provided');
     return res.status(401).json({ error: 'Invalid token' });
   }
@@ -66,6 +70,15 @@ const authenticateToken = (req: Request, res: Response, next: NextFunction) => {
   // Token is valid, proceed
   next();
 };
+
+// Apply rate limiting (generous limits)
+router.use(rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 100, // 100 requests per minute per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later' },
+}));
 
 // Apply authentication middleware to all routes except metrics
 router.use((req: Request, res: Response, next: NextFunction) => {
@@ -153,15 +166,6 @@ router.get('/bot-modules', async (req: Request, res: Response) => {
       sample: JSON.stringify(botModulesResponse, null, 2).substring(0, 1000) // First 1000 chars
     });
 
-    // Check if response body exists and has items
-    if (!botModulesResponse) {
-      log.error('Empty botModulesResponse received from Kubernetes API');
-      return res.status(500).json({
-        error: 'Failed to fetch bot modules',
-        details: 'Empty response from Kubernetes API',
-      });
-    }
-
     // The data we want might be directly in the response object
     let botModules = [];
     if (botModulesResponse.body && botModulesResponse.body.items) {
@@ -224,6 +228,23 @@ router.post('/action/restart-module', async (req: Request, res: Response) => {
 
     if (!namespace) {
       return res.status(400).json({ error: 'namespace is required' });
+    }
+
+    // Validate that the BotModule actually exists in the namespace
+    const customObjectsApi = kc.makeApiClient(K8s.CustomObjectsApi);
+    try {
+      await customObjectsApi.getNamespacedCustomObject({
+        group: 'eevee.bot',
+        version: 'v1',
+        namespace: namespace,
+        plural: 'botmodules',
+        name: moduleName,
+      });
+    } catch (error: any) {
+      if (error.response?.statusCode === 404) {
+        return res.status(404).json({ error: `BotModule ${moduleName} not found in namespace ${namespace}` });
+      }
+      return res.status(500).json({ error: `Failed to verify BotModule ${moduleName}` });
     }
 
     log.info(

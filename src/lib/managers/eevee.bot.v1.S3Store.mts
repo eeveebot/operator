@@ -3,12 +3,11 @@
 import { eevee } from '@eeveebot/crds';
 import { ResourceEvent, ResourceEventType } from '@thehonker/k8s-operator';
 import * as K8s from '@kubernetes/client-node';
-import { S3Client, ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { ListObjectsV2Command } from '@aws-sdk/client-s3';
 
 import { log } from '../../lib/logging.mjs';
-import { resolveSecretKey } from '../../lib/functions.mjs';
+import { resolveSecretKey, parseBool, createS3Client, validateSecretNamespace } from '../../lib/functions.mjs';
 import { managedCrd } from '../../lib/managers/types.mjs';
-import { parseBool } from '../../lib/functions.mjs';
 import { k8sResourceEventsTotal } from '../../lib/metrics.mjs';
 
 // Create KubeConfig for this manager
@@ -114,7 +113,7 @@ async function reconcileResource(
       return;
     }
 
-    const item = s3StoreResponse as eevee.S3Store.s3storeResource;
+    const item = s3StoreResponse as eevee.S3Store.S3StoreResource;
     const namespace = item.metadata?.namespace;
     const name = item.metadata?.name;
 
@@ -148,6 +147,12 @@ async function reconcileResource(
     let secretKey: string | undefined;
 
     try {
+      validateSecretNamespace(
+        spec.accessId.secretKeyRef.secret.name!,
+        spec.accessId.secretKeyRef.secret.namespace,
+        namespace,
+        `S3Store "${name}" accessId`
+      );
       accessId = await resolveSecretKey(
         coreV1Api,
         namespace,
@@ -163,6 +168,12 @@ async function reconcileResource(
     }
 
     try {
+      validateSecretNamespace(
+        spec.accessKey.secretKeyRef.secret.name!,
+        spec.accessKey.secretKeyRef.secret.namespace,
+        namespace,
+        `S3Store "${name}" accessKey`
+      );
       secretKey = await resolveSecretKey(
         coreV1Api,
         namespace,
@@ -178,14 +189,16 @@ async function reconcileResource(
     }
 
     if (!accessId || !secretKey) {
-      log.warn(
-        `S3Store "${name}" could not resolve credentials from Secrets`
-      );
+      const missing = [];
+      if (!accessId) missing.push('accessId');
+      if (!secretKey) missing.push('accessKey');
+      const message = `Failed to resolve S3 credentials: ${missing.join(', ')} not found in Secrets`;
+      log.warn(`S3Store "${name}" — ${message}`);
       await updateS3StoreStatus(customObjectsApi, namespace, name, {
         conditions: [
           {
             lastTransitionTime: new Date().toISOString(),
-            message: 'Failed to resolve credentials from Secrets',
+            message: message,
             reason: 'SecretNotFound',
             status: 'False',
             type: 'Ready',
@@ -202,7 +215,8 @@ async function reconcileResource(
       accessId,
       secretKey,
       spec.bucket,
-      spec.pathStyle || false
+      spec.pathStyle || false,
+      spec.region
     );
 
     if (connectionOk) {
@@ -217,7 +231,6 @@ async function reconcileResource(
             type: 'Ready',
           },
         ],
-        lastConnectionTest: new Date().toISOString(),
       });
     } else {
       log.warn(`S3Store "${name}" connection test failed`);
@@ -235,6 +248,26 @@ async function reconcileResource(
     }
 
     log.debug('S3Store reconciliation completed successfully');
+
+    // Set the reconcile-last annotation to record when reconciliation completed
+    try {
+      await customObjectsApi.patchNamespacedCustomObject({
+        group: eevee.S3Store.details.group,
+        version: eevee.S3Store.details.version,
+        namespace: namespace,
+        plural: eevee.S3Store.details.plural,
+        name: name,
+        body: {
+          metadata: {
+            annotations: {
+              'eevee.bot/reconcile-last': new Date().toISOString(),
+            },
+          },
+        },
+      });
+    } catch (error) {
+      log.debug('Failed to set reconcile-last annotation:', error);
+    }
   } catch (error) {
     log.error('Error during s3store reconciliation:', error);
   }
@@ -250,18 +283,11 @@ async function testS3Connection(
   accessId: string,
   secretKey: string,
   bucket: string,
-  pathStyle: boolean
+  pathStyle: boolean,
+  region?: string
 ): Promise<boolean> {
   try {
-    const client = new S3Client({
-      endpoint: endpoint,
-      credentials: {
-        accessKeyId: accessId,
-        secretAccessKey: secretKey,
-      },
-      forcePathStyle: pathStyle,
-      region: 'us-east-1', // Default region for S3-compatible stores
-    });
+    const client = createS3Client(endpoint, accessId, secretKey, pathStyle, region);
 
     const command = new ListObjectsV2Command({
       Bucket: bucket,

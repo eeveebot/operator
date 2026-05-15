@@ -6,7 +6,7 @@ import * as K8s from '@kubernetes/client-node';
 
 import { log } from '../../lib/logging.mjs';
 import { managedCrd } from '../../lib/managers/types.mjs';
-import { parseBool } from '../../lib/functions.mjs';
+import { parseBool, validateSecretNamespace } from '../../lib/functions.mjs';
 import { k8sResourceEventsTotal } from '../../lib/metrics.mjs';
 
 // Create KubeConfig for this manager
@@ -113,7 +113,7 @@ async function reconcileResource(
       return;
     }
 
-    const item = scheduleResponse as eevee.BackupSchedule.backupscheduleResource;
+    const item = scheduleResponse as eevee.BackupSchedule.BackupScheduleResource;
     const namespace = item.metadata?.namespace;
     const name = item.metadata?.name;
     const uid = item.metadata?.uid;
@@ -126,6 +126,17 @@ async function reconcileResource(
     const spec = item.spec;
     if (!spec?.schedule || !spec?.s3Store || !spec?.image) {
       log.warn(`BackupSchedule "${name}" is missing required spec fields`);
+      await updateBackupScheduleStatus(customObjectsApi, namespace, name, {
+        conditions: [
+          {
+            type: 'Ready',
+            status: 'False',
+            reason: 'InvalidSpec',
+            message: 'Missing required spec fields (schedule, s3Store, image)',
+            lastTransitionTime: new Date().toISOString(),
+          },
+        ],
+      }, true);
       return;
     }
 
@@ -133,7 +144,7 @@ async function reconcileResource(
     const s3StoreName = spec.s3Store.name;
     log.debug(`Resolving s3store "${s3StoreName}" for BackupSchedule "${name}"`);
 
-    let s3StoreSpec: eevee.S3Store.s3storeSpec | undefined;
+    let s3StoreSpec: eevee.S3Store.S3StoreSpec | undefined;
     try {
       const s3StoreResponse = await customObjectsApi.getNamespacedCustomObject({
         group: eevee.S3Store.details.group,
@@ -142,15 +153,56 @@ async function reconcileResource(
         plural: eevee.S3Store.details.plural,
         name: s3StoreName,
       });
-      const s3StoreItem = s3StoreResponse as eevee.S3Store.s3storeResource;
+      const s3StoreItem = s3StoreResponse as eevee.S3Store.S3StoreResource;
       s3StoreSpec = s3StoreItem.spec;
+
+      // Check that the S3Store is Ready (connection test passed)
+      const s3StoreConditions = (s3StoreItem.status as unknown as { conditions?: { type: string; status: string; reason: string; message?: string }[] })?.conditions;
+      const s3Ready = s3StoreConditions?.find(c => c.type === 'Ready');
+      if (!s3Ready || s3Ready.status !== 'True') {
+        const reason = s3Ready?.reason || 'S3StoreNotReady';
+        const msg = s3Ready?.message || `S3Store "${s3StoreName}" is not ready`;
+        log.warn(`S3Store "${s3StoreName}" is not ready (${reason}) for BackupSchedule "${name}"`);
+        await updateBackupScheduleStatus(customObjectsApi, namespace, name, {
+          conditions: [{
+            type: 'Ready',
+            status: 'False',
+            reason: 'S3StoreNotReady',
+            message: msg,
+            lastTransitionTime: new Date().toISOString(),
+          }],
+        }, true);
+        return;
+      }
     } catch (error) {
       log.warn(`Failed to resolve s3store "${s3StoreName}" for BackupSchedule "${name}":`, error);
+      await updateBackupScheduleStatus(customObjectsApi, namespace, name, {
+        conditions: [
+          {
+            type: 'Ready',
+            status: 'False',
+            reason: 'S3StoreNotFound',
+            message: `Failed to resolve s3store "${s3StoreName}"`,
+            lastTransitionTime: new Date().toISOString(),
+          },
+        ],
+      }, true);
       return;
     }
 
     if (!s3StoreSpec) {
       log.warn(`s3store "${s3StoreName}" has no spec`);
+      await updateBackupScheduleStatus(customObjectsApi, namespace, name, {
+        conditions: [
+          {
+            type: 'Ready',
+            status: 'False',
+            reason: 'S3StoreInvalid',
+            message: `s3store "${s3StoreName}" has no spec`,
+            lastTransitionTime: new Date().toISOString(),
+          },
+        ],
+      }, true);
       return;
     }
 
@@ -161,6 +213,9 @@ async function reconcileResource(
     const accessKeySecretName = s3StoreSpec.accessKey?.secretKeyRef?.secret?.name;
     const accessKeySecretNamespace = s3StoreSpec.accessKey?.secretKeyRef?.secret?.namespace || namespace;
     const accessKeySecretKey = s3StoreSpec.accessKey?.secretKeyRef?.key;
+
+    validateSecretNamespace(accessIdSecretName!, accessIdSecretNamespace !== namespace ? accessIdSecretNamespace : undefined, namespace, `BackupSchedule "${name}" accessId`);
+    validateSecretNamespace(accessKeySecretName!, accessKeySecretNamespace !== namespace ? accessKeySecretNamespace : undefined, namespace, `BackupSchedule "${name}" accessKey`);
 
     // Find ALL botmodules that reference this backupschedule
     type BotModuleTarget = {
@@ -180,7 +235,7 @@ async function reconcileResource(
         plural: eevee.BotModule.details.plural,
       });
 
-      const items = (botModulesResponse as { items: eevee.BotModule.botmoduleResource[] }).items;
+      const items = (botModulesResponse as { items: eevee.BotModule.BotModuleResource[] }).items;
       for (const bm of items) {
         if (bm.spec?.backupSchedule?.name === name) {
           const crName = bm.metadata?.name!;
@@ -201,6 +256,17 @@ async function reconcileResource(
       log.warn(
         `No botmodules reference BackupSchedule "${name}" — cannot determine backup targets`
       );
+      await updateBackupScheduleStatus(customObjectsApi, namespace, name, {
+        conditions: [
+          {
+            type: 'Ready',
+            status: 'False',
+            reason: 'NoTargets',
+            message: 'No botmodules reference this BackupSchedule',
+            lastTransitionTime: new Date().toISOString(),
+          },
+        ],
+      }, true);
       return;
     }
 
@@ -217,6 +283,7 @@ async function reconcileResource(
         { name: 'S3_BUCKET', value: s3StoreSpec.bucket },
         { name: 'S3_PREFIX', value: s3StoreSpec.prefix || '' },
         { name: 'S3_PATH_STYLE', value: String(s3StoreSpec.pathStyle || false) },
+        { name: 'S3_SIGNATURE_V2', value: String(s3StoreSpec.signatureV2 || false) },
         { name: 'BACKUP_NAMESPACE', value: namespace },
         { name: 'BACKUP_MODULE', value: target.moduleName },
         { name: 'BACKUP_PVC_PATH', value: target.volumeMountPath },
@@ -272,7 +339,7 @@ async function reconcileResource(
           ownerReferences: [
             {
               apiVersion: `${eevee.BackupSchedule.details.group}/${eevee.BackupSchedule.details.version}`,
-              kind: eevee.BackupSchedule.details.plural,
+              kind: eevee.BackupSchedule.details.name,
               name: name,
               uid: uid,
               controller: true,
@@ -295,6 +362,7 @@ async function reconcileResource(
                     {
                       name: 'backup',
                       image: spec.image,
+                      imagePullPolicy: spec.imagePullPolicy as K8s.V1Container['imagePullPolicy'] || 'IfNotPresent',
                       command: ['/usr/local/bin/backup.sh'],
                       env: envVars,
                       volumeMounts: volumeMounts,
@@ -309,17 +377,13 @@ async function reconcileResource(
 
       // Create or update the CronJob
       try {
-        await batchV1Api.readNamespacedCronJob({
-          name: cronJobName,
-          namespace: namespace,
-        });
-        log.debug(`CronJob ${cronJobName} already exists — updating`);
-        await batchV1Api.replaceNamespacedCronJob({
+        log.debug(`CronJob ${cronJobName} already exists — patching`);
+        await batchV1Api.patchNamespacedCronJob({
           name: cronJobName,
           namespace: namespace,
           body: cronJob,
         });
-        log.info(`Updated CronJob ${cronJobName} in namespace ${namespace}`);
+        log.info(`Patched CronJob ${cronJobName} in namespace ${namespace}`);
       } catch {
         log.info(`Creating CronJob ${cronJobName} in namespace ${namespace}`);
         await batchV1Api.createNamespacedCronJob({
@@ -371,29 +435,9 @@ async function reconcileResource(
           lastTransitionTime: new Date().toISOString(),
         },
       ],
-    });
+    }, true);
 
     log.debug('BackupSchedule reconciliation completed successfully');
-
-    // Set the reconcile-last annotation to record when reconciliation completed
-    try {
-      await customObjectsApi.patchNamespacedCustomObject({
-        group: eevee.BackupSchedule.details.group,
-        version: eevee.BackupSchedule.details.version,
-        namespace: namespace,
-        plural: eevee.BackupSchedule.details.plural,
-        name: name,
-        body: {
-          metadata: {
-            annotations: {
-              'eevee.bot/reconcile-last': new Date().toISOString(),
-            },
-          },
-        },
-      });
-    } catch (error) {
-      log.debug('Failed to set reconcile-last annotation:', error);
-    }
   } catch (error) {
     log.error('Error during backupschedule reconciliation:', error);
   }
@@ -406,7 +450,8 @@ async function updateBackupScheduleStatus(
   customObjectsApi: K8s.CustomObjectsApi,
   namespace: string,
   name: string,
-  status: Record<string, unknown>
+  status: Record<string, unknown>,
+  terminal: boolean = false
 ): Promise<void> {
   try {
     await customObjectsApi.patchNamespacedCustomObjectStatus({
@@ -419,10 +464,39 @@ async function updateBackupScheduleStatus(
         status: status,
       },
     });
+
+    if (terminal) {
+      await setReconcileLast(customObjectsApi, namespace, name);
+    }
   } catch (error) {
     log.error(
       `Failed to update status for BackupSchedule "${name}" in namespace "${namespace}":`,
       error
     );
+  }
+}
+
+async function setReconcileLast(
+  customObjectsApi: K8s.CustomObjectsApi,
+  namespace: string,
+  name: string
+): Promise<void> {
+  try {
+    await customObjectsApi.patchNamespacedCustomObject({
+      group: eevee.BackupSchedule.details.group,
+      version: eevee.BackupSchedule.details.version,
+      namespace: namespace,
+      plural: eevee.BackupSchedule.details.plural,
+      name: name,
+      body: {
+        metadata: {
+          annotations: {
+            'eevee.bot/reconcile-last': new Date().toISOString(),
+          },
+        },
+      },
+    });
+  } catch (error) {
+    log.debug('Failed to set reconcile-last annotation:', error);
   }
 }

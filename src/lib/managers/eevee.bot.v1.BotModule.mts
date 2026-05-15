@@ -5,7 +5,7 @@ import { ResourceEvent, ResourceEventType } from '@thehonker/k8s-operator';
 import * as K8s from '@kubernetes/client-node';
 
 import { log } from '../../lib/logging.mjs';
-import { resolveSecretKey, findLatestBackup } from '../../lib/functions.mjs';
+import { resolveSecretKey, findLatestBackup, validateSecretNamespace } from '../../lib/functions.mjs';
 import { managedCrd } from '../../lib/managers/types.mjs';
 import { parseBool } from '../../lib/functions.mjs';
 import { k8sResourceEventsTotal } from '../../lib/metrics.mjs';
@@ -33,9 +33,24 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
   log.debug('Received BotModule resource event:', event);
 
   // Extract module name for logging
-  const moduleName =
-    (event.object as eevee.BotModule.botmoduleResource)?.spec?.moduleName ||
-    event.meta.name;
+  const spec = (event.object as eevee.BotModule.BotModuleResource)?.spec;
+  const moduleName = spec?.moduleName || event.meta.name;
+
+  // Validate spec.moduleName is explicitly set
+  if (!spec?.moduleName) {
+    log.error(`BotModule "${event.meta.name}" is missing required spec.moduleName`);
+    const customObjectsApi = kc.makeApiClient(K8s.CustomObjectsApi);
+    await updateBotModuleStatus(customObjectsApi, event.meta.namespace || '', event.meta.name, {
+      conditions: [{
+        type: 'Ready',
+        status: 'False',
+        reason: 'InvalidSpec',
+        message: 'spec.moduleName is required',
+        lastTransitionTime: new Date().toISOString(),
+      }],
+    }, true);
+    return;
+  }
 
   // Track Kubernetes resource events
   k8sResourceEventsTotal.inc({
@@ -169,12 +184,27 @@ async function reconcileResource(
   event: ResourceEvent
 ): Promise<void> {
   // Extract module name for logging
-  const moduleName =
-    (event.object as eevee.BotModule.botmoduleResource)?.spec?.moduleName ||
-    event.meta.name;
+  const spec = (event.object as eevee.BotModule.BotModuleResource)?.spec;
+  const moduleName = spec?.moduleName || event.meta.name;
   log.debug(
     `Starting botmodule "${moduleName}" reconciliation for specific resource`
   );
+
+  // Validate spec.moduleName is explicitly set
+  if (!spec?.moduleName) {
+    log.error(`BotModule "${event.meta.name}" is missing required spec.moduleName`);
+    const customObjectsApi = kc.makeApiClient(K8s.CustomObjectsApi);
+    await updateBotModuleStatus(customObjectsApi, event.meta.namespace || '', event.meta.name, {
+      conditions: [{
+        type: 'Ready',
+        status: 'False',
+        reason: 'InvalidSpec',
+        message: 'spec.moduleName is required',
+        lastTransitionTime: new Date().toISOString(),
+      }],
+    }, true);
+    return;
+  }
   if (!kc) {
     log.error('KubeConfig not provided to botmodule reconciler');
     return;
@@ -215,7 +245,7 @@ async function reconcileResource(
       return;
     }
 
-    const item = botModuleResponse as eevee.BotModule.botmoduleResource;
+    const item = botModuleResponse as eevee.BotModule.BotModuleResource;
     const namespace = item.metadata?.namespace;
     const name = item.metadata?.name;
 
@@ -299,7 +329,7 @@ async function reconcileResource(
       log.info(
         `Creating deployment ${deploymentName} in namespace ${namespace}`
       );
-      await createModuleDeployment(appsV1Api, coreV1Api, namespace, name, item);
+      await createModuleDeployment(appsV1Api, coreV1Api, customObjectsApi, namespace, name, item);
 
       // Set status to Creating — deployment was just created, may not be ready yet
       await updateBotModuleStatus(customObjectsApi, namespace, name, {
@@ -327,9 +357,10 @@ async function reconcileResource(
 async function createModuleDeployment(
   appsV1Api: K8s.AppsV1Api,
   coreV1Api: K8s.CoreV1Api,
+  customObjectsApi: K8s.CustomObjectsApi,
   namespace: string,
   moduleName: string,
-  item: eevee.BotModule.botmoduleResource
+  item: eevee.BotModule.BotModuleResource
 ): Promise<void> {
   log.debug(
     `Creating module deployment for "${moduleName}" in namespace ${namespace}`
@@ -347,19 +378,22 @@ async function createModuleDeployment(
   log.debug(`Generated deployment name: ${deploymentName}`);
 
   // Get configuration from the BotModule spec
-  let moduleImage = 'ghcr.io/eeveebot/module:latest';
+  let moduleImage: string | undefined;
   let metricsEnabled = false;
   let metricsPort = 9000;
   let size = 1;
-  const pullPolicy: K8s.V1Container['imagePullPolicy'] = 'Always';
+  const pullPolicy: K8s.V1Container['imagePullPolicy'] =
+    (item as eevee.BotModule.BotModuleResource)?.spec?.imagePullPolicy as K8s.V1Container['imagePullPolicy']
+    || (item as eevee.BotModule.BotModuleResource)?.spec?.pullPolicy as K8s.V1Container['imagePullPolicy']
+    || 'IfNotPresent';
   let volumeMountPath = '/data';
 
   log.debug('Processing BotModule spec for configuration');
   try {
-    const moduleConfig = item as eevee.BotModule.botmoduleResource;
+    const moduleConfig = item as eevee.BotModule.BotModuleResource;
     if (moduleConfig?.spec?.image) {
       moduleImage = moduleConfig.spec.image;
-      log.debug(`Using custom image: ${moduleImage}`);
+      log.debug(`Using image: ${moduleImage}`);
     }
     if (moduleConfig?.spec?.metrics !== undefined) {
       metricsEnabled = moduleConfig.spec.metrics;
@@ -384,6 +418,20 @@ async function createModuleDeployment(
     );
   }
 
+  if (!moduleImage) {
+    log.error(`BotModule "${moduleName}" is missing required spec.image`);
+    await updateBotModuleStatus(customObjectsApi, namespace, moduleName, {
+      conditions: [{
+        type: 'Ready',
+        status: 'False',
+        reason: 'InvalidSpec',
+        message: 'spec.image is required',
+        lastTransitionTime: new Date().toISOString(),
+      }],
+    }, true);
+    return;
+  }
+
   // Prepare environment variables for the module
   const containerEnvVars: K8s.V1EnvVar[] = [
     {
@@ -401,6 +449,12 @@ async function createModuleDeployment(
 
   // Check if envSecret is provided and add it to envFrom
   if (item.spec?.envSecret) {
+    validateSecretNamespace(
+      item.spec.envSecret.name!,
+      item.spec.envSecret.namespace as string | undefined,
+      namespace,
+      `BotModule "${moduleName}" envSecret`
+    );
     log.debug(
       `Adding envSecret ${item.spec.envSecret.name} to module environment`
     );
@@ -470,6 +524,12 @@ async function createModuleDeployment(
 
       if (natsTokenConfig?.secretKeyRef) {
         const secretName = natsTokenConfig.secretKeyRef.secret.name;
+        validateSecretNamespace(
+          secretName,
+          (natsTokenConfig.secretKeyRef.secret as { namespace?: string }).namespace,
+          namespace,
+          `BotModule "${moduleName}" NATS token`
+        );
         log.debug(`Found NATS token secret reference: ${secretName}`);
 
         // Add NATS_HOST from the same secret (assuming it's in a field called 'host')
@@ -594,15 +654,17 @@ async function createModuleDeployment(
           (error as { response?: { statusCode?: number } }).response
             ?.statusCode === 409
         ) {
-          // ConfigMap already exists, update it
+          // ConfigMap already exists, patch it
           try {
-            await coreV1Api.replaceNamespacedConfigMap({
+            await coreV1Api.patchNamespacedConfigMap({
               name: configMapName,
               namespace: namespace,
-              body: configMap,
+              body: {
+                data: configMap.data,
+              },
             });
             log.info(
-              `Updated ConfigMap ${configMapName} in namespace ${namespace}`
+              `Patched ConfigMap ${configMapName} in namespace ${namespace}`
             );
           } catch (updateError) {
             log.warn(
@@ -684,6 +746,7 @@ async function createModuleDeployment(
                 failureThreshold: 3,
               },
               startupProbe: item.spec?.startupProbe,
+              resources: item.spec?.resources,
             },
           ],
         },
@@ -717,7 +780,7 @@ async function updateModuleDeployment(
   customObjectsApi: K8s.CustomObjectsApi,
   namespace: string,
   moduleName: string,
-  item: eevee.BotModule.botmoduleResource
+  item: eevee.BotModule.BotModuleResource
 ): Promise<void> {
   log.debug(
     `Updating module deployment for "${moduleName}" in namespace ${namespace}`
@@ -753,19 +816,22 @@ async function updateModuleDeployment(
   }
 
   // Get configuration from the BotModule spec
-  let moduleImage = 'ghcr.io/eeveebot/module:latest';
+  let moduleImage: string | undefined;
   let metricsEnabled = false;
   let metricsPort = 9000;
   let size = 1;
-  const pullPolicy: K8s.V1Container['imagePullPolicy'] = 'Always';
+  const pullPolicy: K8s.V1Container['imagePullPolicy'] =
+    (item as eevee.BotModule.BotModuleResource)?.spec?.imagePullPolicy as K8s.V1Container['imagePullPolicy']
+    || (item as eevee.BotModule.BotModuleResource)?.spec?.pullPolicy as K8s.V1Container['imagePullPolicy']
+    || 'IfNotPresent';
   let volumeMountPath = '/data';
 
   log.debug('Processing BotModule spec for configuration');
   try {
-    const moduleConfig = item as eevee.BotModule.botmoduleResource;
+    const moduleConfig = item as eevee.BotModule.BotModuleResource;
     if (moduleConfig?.spec?.image) {
       moduleImage = moduleConfig.spec.image;
-      log.debug(`Using custom image: ${moduleImage}`);
+      log.debug(`Using image: ${moduleImage}`);
     }
     if (moduleConfig?.spec?.metrics !== undefined) {
       metricsEnabled = moduleConfig.spec.metrics;
@@ -790,6 +856,20 @@ async function updateModuleDeployment(
     );
   }
 
+  if (!moduleImage) {
+    log.error(`BotModule "${moduleName}" is missing required spec.image`);
+    await updateBotModuleStatus(customObjectsApi, namespace, moduleName, {
+      conditions: [{
+        type: 'Ready',
+        status: 'False',
+        reason: 'InvalidSpec',
+        message: 'spec.image is required',
+        lastTransitionTime: new Date().toISOString(),
+      }],
+    }, true);
+    return;
+  }
+
   try {
     // Get the current deployment
     const deploymentResponse = await appsV1Api.readNamespacedDeployment({
@@ -799,185 +879,114 @@ async function updateModuleDeployment(
 
     const deployment = deploymentResponse as K8s.V1Deployment;
 
-    // Check if we should mount the operator API token
-    if (item.spec?.mountOperatorApiToken) {
-      const operatorApiToken = process.env.EEVEE_OPERATOR_API_TOKEN;
-      if (operatorApiToken) {
-        log.debug('Mounting operator API token to module environment');
-        // Add the EEVEE_OPERATOR_API_TOKEN to container environment variables
-        if (deployment?.spec?.template?.spec?.containers) {
-          const container = deployment.spec.template.spec.containers[0];
-          if (container) {
-            // Check if the env var already exists
-            const tokenEnvIndex = container.env?.findIndex(
-              (env: K8s.V1EnvVar) => env.name === 'EEVEE_OPERATOR_API_TOKEN'
-            );
+    // Build the desired container spec for patching
+    const desiredContainer: K8s.V1Container = {
+      name: 'module',
+      image: moduleImage,
+      imagePullPolicy: pullPolicy,
+      livenessProbe: item.spec?.livenessProbe || {
+        httpGet: { path: '/health', port: metricsPort || 9000 },
+        initialDelaySeconds: 10,
+        periodSeconds: 30,
+        timeoutSeconds: 5,
+        failureThreshold: 3,
+      },
+      readinessProbe: item.spec?.readinessProbe || {
+        httpGet: { path: '/health', port: metricsPort || 9000 },
+        initialDelaySeconds: 5,
+        periodSeconds: 10,
+        timeoutSeconds: 3,
+        failureThreshold: 3,
+      },
+      startupProbe: item.spec?.startupProbe,
+    };
 
-            if (tokenEnvIndex === -1 || tokenEnvIndex === undefined) {
-              // Add the token environment variable if it doesn't exist
-              container.env = container.env || [];
-              container.env.push({
-                name: 'EEVEE_OPERATOR_API_TOKEN',
-                value: operatorApiToken,
-              });
+    if (item.spec?.resources) {
+      desiredContainer.resources = item.spec.resources;
+    }
 
-              // Also set the operator API URL
-              const operatorApiUrl = `http://eevee-eevee-operator-service.${namespace}.svc.cluster.local.:9000`;
-              container.env.push({
-                name: 'EEVEE_OPERATOR_API_URL',
-                value: operatorApiUrl,
-              });
-            }
-          }
-        }
-      } else {
-        log.warn(
-          'mountOperatorApiToken is true but EEVEE_OPERATOR_API_TOKEN is not set in operator environment'
+    // Handle metrics port
+    if (metricsEnabled) {
+      desiredContainer.ports = deployment?.spec?.template?.spec?.containers?.[0]?.ports || [];
+      const hasMetricsPort = desiredContainer.ports.some(
+        (port) => port.name === 'metrics'
+      );
+      if (!hasMetricsPort) {
+        desiredContainer.ports.push({
+          name: 'metrics',
+          containerPort: metricsPort,
+          protocol: 'TCP',
+        });
+      }
+    } else {
+      const existingPorts = deployment?.spec?.template?.spec?.containers?.[0]?.ports;
+      if (existingPorts) {
+        desiredContainer.ports = existingPorts.filter(
+          (port) => port.name !== 'metrics'
         );
       }
     }
 
-    // Handle envSecret in updates
-    if (deployment?.spec?.template?.spec?.containers) {
-      const container = deployment.spec.template.spec.containers[0];
-      if (container) {
-        // Initialize env and envFrom if they don't exist
-        container.env = container.env || [];
-        container.envFrom = container.envFrom || [];
-
-        // Check if envSecret is provided
-        if (item.spec?.envSecret) {
-          log.debug(
-            `Updating envSecret ${item.spec.envSecret.name} in module environment`
-          );
-
-          // Check if the secretRef already exists in envFrom
-          const secretExists = container.envFrom.some(
-            (envFrom: K8s.V1EnvFromSource) =>
-              envFrom.secretRef?.name === item.spec?.envSecret?.name
-          );
-
-          // Add the secretRef if it doesn't exist
-          if (!secretExists) {
-            container.envFrom.push({
-              secretRef: {
-                name: item.spec.envSecret.name,
-              },
-            });
-          }
-        }
-
-        // Ensure MODULE_DATA environment variable is set if PVC is used
-        if (item.spec?.persistentVolumeClaim) {
-          const hasModuleDataEnv = container.env.some(
-            (env: K8s.V1EnvVar) => env.name === 'MODULE_DATA'
-          );
-
-          if (!hasModuleDataEnv) {
-            // Determine the volume mount path
-            let volumeMountPath = '/data';
-            if (item.spec?.volumeMountPath) {
-              volumeMountPath = item.spec.volumeMountPath;
-            }
-
-            container.env.push({
-              name: 'MODULE_DATA',
-              value: volumeMountPath,
-            });
-            log.debug(
-              `Added MODULE_DATA environment variable with value: ${volumeMountPath}`
-            );
-          }
-        }
+    // Build env updates
+    const desiredEnv: K8s.V1EnvVar[] = [];
+    // HTTP_API_PORT for metrics
+    if (metricsEnabled) {
+      desiredEnv.push({ name: 'HTTP_API_PORT', value: metricsPort.toString() });
+    }
+    // Operator API token
+    if (item.spec?.mountOperatorApiToken) {
+      const operatorApiToken = process.env.EEVEE_OPERATOR_API_TOKEN;
+      if (operatorApiToken) {
+        desiredEnv.push({ name: 'EEVEE_OPERATOR_API_TOKEN', value: operatorApiToken });
+        desiredEnv.push({
+          name: 'EEVEE_OPERATOR_API_URL',
+          value: `http://eevee-eevee-operator-service.${namespace}.svc.cluster.local.:9000`,
+        });
       }
     }
+    // MODULE_DATA for PVC
+    if (item.spec?.persistentVolumeClaim) {
+      desiredEnv.push({ name: 'MODULE_DATA', value: volumeMountPath });
+    }
+    // Merge with existing env vars, overriding duplicates
+    const existingEnv = deployment?.spec?.template?.spec?.containers?.[0]?.env || [];
+    const envMap = new Map<string, K8s.V1EnvVar>();
+    for (const e of existingEnv) { envMap.set(e.name, e); }
+    for (const e of desiredEnv) { envMap.set(e.name, e); }
+    desiredContainer.env = Array.from(envMap.values());
 
-    // Update the deployment properties
-    if (
-      deployment &&
-      deployment.spec &&
-      deployment.spec.template.spec &&
-      deployment.spec.template.spec.containers
-    ) {
-      deployment.spec.replicas = size;
-
-      const container = deployment.spec.template.spec.containers[0];
-      if (container) {
-        container.image = moduleImage;
-        container.imagePullPolicy = pullPolicy;
-
-        // Update ports if metrics settings changed
-        if (metricsEnabled) {
-          // Add metrics port if not present
-          const hasMetricsPort = container.ports?.some(
-            (port) => port.name === 'metrics'
-          );
-          if (!hasMetricsPort) {
-            container.ports = container.ports || [];
-            container.ports.push({
-              name: 'metrics',
-              containerPort: metricsPort,
-              protocol: 'TCP',
-            });
-          }
-
-          // Set HTTP_API_PORT to match metricsPort so the health and metrics
-          // endpoints are served on the port that probes target
-          const hasHttpApiPort = container.env?.some(
-            (env: K8s.V1EnvVar) => env.name === 'HTTP_API_PORT'
-          );
-          if (!hasHttpApiPort) {
-            container.env = container.env || [];
-            container.env.push({
-              name: 'HTTP_API_PORT',
-              value: metricsPort.toString(),
-            });
-          } else {
-            const httpApiPortEnv = container.env?.find(
-              (env: K8s.V1EnvVar) => env.name === 'HTTP_API_PORT'
-            );
-            if (httpApiPortEnv) {
-              httpApiPortEnv.value = metricsPort.toString();
-            }
-          }
-        } else {
-          // Remove metrics port if present
-          if (container.ports) {
-            container.ports = container.ports.filter(
-              (port) => port.name !== 'metrics'
-            );
-          }
-        }
-
-        // Update probes
-        container.livenessProbe = item.spec?.livenessProbe || {
-          httpGet: { path: '/health', port: metricsPort || 9000 },
-          initialDelaySeconds: 10,
-          periodSeconds: 30,
-          timeoutSeconds: 5,
-          failureThreshold: 3,
-        };
-        container.readinessProbe = item.spec?.readinessProbe || {
-          httpGet: { path: '/health', port: metricsPort || 9000 },
-          initialDelaySeconds: 5,
-          periodSeconds: 10,
-          timeoutSeconds: 3,
-          failureThreshold: 3,
-        };
-        container.startupProbe = item.spec?.startupProbe;
-      }
-
-      // Update the deployment
-      await appsV1Api.replaceNamespacedDeployment({
-        name: deploymentName,
-        namespace: namespace,
-        body: deployment,
-      });
-
-      log.info(
-        `Updated deployment ${deploymentName} in namespace ${namespace}`
+    // Build envFrom for envSecret
+    const desiredEnvFrom: K8s.V1EnvFromSource[] =
+      deployment?.spec?.template?.spec?.containers?.[0]?.envFrom || [];
+    if (item.spec?.envSecret) {
+      const secretExists = desiredEnvFrom.some(
+        (envFrom) => envFrom.secretRef?.name === item.spec?.envSecret?.name
       );
+      if (!secretExists) {
+        desiredEnvFrom.push({ secretRef: { name: item.spec.envSecret.name } });
+      }
     }
+    desiredContainer.envFrom = desiredEnvFrom;
+
+    // Patch the deployment
+    await appsV1Api.patchNamespacedDeployment({
+      name: deploymentName,
+      namespace: namespace,
+      body: {
+        spec: {
+          replicas: size,
+          template: {
+            spec: {
+              containers: [desiredContainer],
+            },
+          },
+        },
+      },
+    });
+
+    log.info(
+      `Patched deployment ${deploymentName} in namespace ${namespace}`
+    );
   } catch (error) {
     log.error(`Failed to update deployment ${deploymentName}:`, error);
   }
@@ -1001,13 +1010,15 @@ async function updateModuleDeployment(
       };
 
       try {
-        await coreV1Api.replaceNamespacedConfigMap({
+        await coreV1Api.patchNamespacedConfigMap({
           name: configMapName,
           namespace: namespace,
-          body: configMap,
+          body: {
+            data: configMap.data,
+          },
         });
         log.info(
-          `Updated ConfigMap ${configMapName} in namespace ${namespace}`
+          `Patched ConfigMap ${configMapName} in namespace ${namespace}`
         );
       } catch (error: unknown) {
         if (
@@ -1065,7 +1076,7 @@ async function validateAndTriggerBackupScheduleReconcile(
   customObjectsApi: K8s.CustomObjectsApi,
   namespace: string,
   moduleName: string,
-  item: eevee.BotModule.botmoduleResource
+  item: eevee.BotModule.BotModuleResource
 ): Promise<void> {
   const scheduleName = item.spec?.backupSchedule?.name;
 
@@ -1148,7 +1159,7 @@ async function handleBootstrapFromBackup(
   namespace: string,
   moduleName: string,
   pvcName: string,
-  item: eevee.BotModule.botmoduleResource
+  item: eevee.BotModule.BotModuleResource
 ): Promise<boolean> {
   const bootstrapConfig = item.spec?.bootstrapFromBackup;
   if (!bootstrapConfig) {
@@ -1169,17 +1180,26 @@ async function handleBootstrapFromBackup(
   }
 
   const s3StoreName = bootstrapConfig.s3Store?.name;
-  const restoreImage = bootstrapConfig.image;
+  const restoreImage = bootstrapConfig.image || 'ghcr.io/eeveebot/backupJob:latest';
 
-  if (!s3StoreName || !restoreImage) {
+  if (!s3StoreName) {
     log.warn(
-      `BotModule "${moduleName}" has incomplete bootstrapFromBackup config (missing s3Store name or image)`
+      `BotModule "${moduleName}" has incomplete bootstrapFromBackup config (missing s3Store name)`
     );
+    await updateBotModuleStatus(customObjectsApi, namespace, moduleName, {
+      conditions: [{
+        type: 'Bootstrapped',
+        status: 'False',
+        reason: 'BootstrapConfigInvalid',
+        message: 'Incomplete bootstrapFromBackup config (missing s3Store name)',
+        lastTransitionTime: new Date().toISOString(),
+      }],
+    });
     return false;
   }
 
   // Resolve the s3store
-  let s3StoreSpec: eevee.S3Store.s3storeSpec | undefined;
+  let s3StoreSpec: eevee.S3Store.S3StoreSpec | undefined;
   try {
     const s3StoreResponse = await customObjectsApi.getNamespacedCustomObject({
       group: eevee.S3Store.details.group,
@@ -1188,28 +1208,77 @@ async function handleBootstrapFromBackup(
       plural: eevee.S3Store.details.plural,
       name: s3StoreName,
     });
-    const s3StoreItem = s3StoreResponse as eevee.S3Store.s3storeResource;
+    const s3StoreItem = s3StoreResponse as eevee.S3Store.S3StoreResource;
     s3StoreSpec = s3StoreItem.spec;
+
+    // Check that the S3Store is Ready (connection test passed)
+    const s3StoreConditions = (s3StoreItem.status as unknown as { conditions?: { type: string; status: string; reason: string; message?: string }[] })?.conditions;
+    const s3Ready = s3StoreConditions?.find(c => c.type === 'Ready');
+    if (!s3Ready || s3Ready.status !== 'True') {
+      const reason = s3Ready?.reason || 'S3StoreNotReady';
+      const msg = s3Ready?.message || `S3Store "${s3StoreName}" is not ready`;
+      log.warn(`S3Store "${s3StoreName}" is not ready (${reason}) for bootstrap restore of BotModule "${moduleName}"`);
+      await updateBotModuleStatus(customObjectsApi, namespace, moduleName, {
+        conditions: [{
+          type: 'Bootstrapped',
+          status: 'False',
+          reason: 'S3StoreNotReady',
+          message: msg,
+          lastTransitionTime: new Date().toISOString(),
+        }],
+      });
+      return false;
+    }
   } catch (error) {
     log.warn(
       `Failed to resolve s3store "${s3StoreName}" for bootstrap restore of BotModule "${moduleName}":`,
       error
     );
+    await updateBotModuleStatus(customObjectsApi, namespace, moduleName, {
+      conditions: [{
+        type: 'Bootstrapped',
+        status: 'False',
+        reason: 'S3StoreNotFound',
+        message: `Failed to resolve s3store "${s3StoreName}"`,
+        lastTransitionTime: new Date().toISOString(),
+      }],
+    });
     return false;
   }
 
   if (!s3StoreSpec) {
     log.warn(`s3store "${s3StoreName}" has no spec`);
+    await updateBotModuleStatus(customObjectsApi, namespace, moduleName, {
+      conditions: [{
+        type: 'Bootstrapped',
+        status: 'False',
+        reason: 'S3StoreInvalid',
+        message: `s3store "${s3StoreName}" has no spec`,
+        lastTransitionTime: new Date().toISOString(),
+      }],
+    });
     return false;
   }
 
   // Find the latest backup via S3 listing
+  validateSecretNamespace(
+    s3StoreSpec.accessId?.secretKeyRef?.secret?.name!,
+    s3StoreSpec.accessId?.secretKeyRef?.secret?.namespace,
+    namespace,
+    `BotModule "${moduleName}" bootstrap accessId`
+  );
   const accessId = await resolveSecretKey(
     coreV1Api,
     namespace,
     s3StoreSpec.accessId?.secretKeyRef?.secret?.name!,
     s3StoreSpec.accessId?.secretKeyRef?.secret?.namespace || namespace,
     s3StoreSpec.accessId?.secretKeyRef?.key!
+  );
+  validateSecretNamespace(
+    s3StoreSpec.accessKey?.secretKeyRef?.secret?.name!,
+    s3StoreSpec.accessKey?.secretKeyRef?.secret?.namespace,
+    namespace,
+    `BotModule "${moduleName}" bootstrap accessKey`
   );
   const secretKey = await resolveSecretKey(
     coreV1Api,
@@ -1223,6 +1292,15 @@ async function handleBootstrapFromBackup(
     log.warn(
       `Cannot resolve S3 credentials for bootstrap restore of BotModule "${moduleName}"`
     );
+    await updateBotModuleStatus(customObjectsApi, namespace, moduleName, {
+      conditions: [{
+        type: 'Bootstrapped',
+        status: 'False',
+        reason: 'SecretNotFound',
+        message: 'Failed to resolve S3 credentials from Secrets',
+        lastTransitionTime: new Date().toISOString(),
+      }],
+    });
     return false;
   }
 
@@ -1235,7 +1313,8 @@ async function handleBootstrapFromBackup(
     s3StoreSpec.prefix || '',
     namespace,
     botModuleName,
-    s3StoreSpec.pathStyle || false
+    s3StoreSpec.pathStyle || false,
+    s3StoreSpec.region
   );
 
   if (!backupId) {
@@ -1264,6 +1343,7 @@ async function handleBootstrapFromBackup(
     { name: 'S3_BUCKET', value: s3StoreSpec.bucket },
     { name: 'S3_PREFIX', value: s3StoreSpec.prefix || '' },
     { name: 'S3_PATH_STYLE', value: String(s3StoreSpec.pathStyle || false) },
+    { name: 'S3_SIGNATURE_V2', value: String(s3StoreSpec.signatureV2 || false) },
     { name: 'RESTORE_NAMESPACE', value: namespace },
     { name: 'RESTORE_MODULE', value: botModuleName },
     { name: 'RESTORE_BACKUP_ID', value: backupId },
@@ -1315,7 +1395,7 @@ async function handleBootstrapFromBackup(
       ownerReferences: [
         {
           apiVersion: `${eevee.BotModule.details.group}/${eevee.BotModule.details.version}`,
-          kind: 'botmodule',
+          kind: eevee.BotModule.details.name,
           name: moduleName,
           uid: item.metadata?.uid!,
           controller: true,
@@ -1327,11 +1407,13 @@ async function handleBootstrapFromBackup(
       template: {
         spec: {
           restartPolicy: 'OnFailure',
+          activeDeadlineSeconds: 600,
           volumes: volumes,
           containers: [
             {
               name: 'restore',
               image: restoreImage,
+              imagePullPolicy: bootstrapConfig?.imagePullPolicy as K8s.V1Container['imagePullPolicy'] || 'IfNotPresent',
               command: ['/usr/local/bin/restore.sh'],
               env: envVars,
               volumeMounts: volumeMounts,
@@ -1407,6 +1489,15 @@ async function handleBootstrapFromBackup(
       `Failed to create bootstrap restore Job for BotModule "${moduleName}":`,
       error
     );
+    await updateBotModuleStatus(customObjectsApi, namespace, moduleName, {
+      conditions: [{
+        type: 'Bootstrapped',
+        status: 'False',
+        reason: 'BootstrapRestoreFailed',
+        message: `Failed to create bootstrap restore Job: ${error}`,
+        lastTransitionTime: new Date().toISOString(),
+      }],
+    });
     return false;
   }
 
@@ -1484,8 +1575,7 @@ async function handleBootstrapFromBackup(
   return false;
 }
 
-/**
- * Find the latest backup UUID for a module by listing S3 objects
+
 /**
  * Ensure a PVC exists for the module. Creates it if it doesn't already exist.
  * This is called from the reconciler before deployment creation or bootstrap restore,
@@ -1592,24 +1682,16 @@ async function ensurePvcBootstrappedAnnotation(
   pvcName: string,
 ): Promise<void> {
   try {
-    const pvc = await coreV1Api.readNamespacedPersistentVolumeClaim({
+    await coreV1Api.patchNamespacedPersistentVolumeClaim({
       name: pvcName,
       namespace: namespace,
-    });
-
-    // Already annotated
-    if (pvc.metadata?.annotations?.['eevee.bot/bootstrapped'] === 'true') {
-      return;
-    }
-
-    pvc.metadata = pvc.metadata || {};
-    pvc.metadata.annotations = pvc.metadata.annotations || {};
-    pvc.metadata.annotations['eevee.bot/bootstrapped'] = 'true';
-
-    await coreV1Api.replaceNamespacedPersistentVolumeClaim({
-      name: pvcName,
-      namespace: namespace,
-      body: pvc,
+      body: {
+        metadata: {
+          annotations: {
+            'eevee.bot/bootstrapped': 'true',
+          },
+        },
+      },
     });
     log.debug(`Set bootstrapped annotation on PVC ${pvcName}`);
   } catch (error) {
@@ -1627,7 +1709,8 @@ async function updateBotModuleStatus(
   customObjectsApi: K8s.CustomObjectsApi,
   namespace: string,
   name: string,
-  status: Record<string, unknown>
+  status: Record<string, unknown>,
+  terminal?: boolean
 ): Promise<void> {
   try {
     await customObjectsApi.patchNamespacedCustomObjectStatus({
@@ -1640,11 +1723,40 @@ async function updateBotModuleStatus(
         status: status,
       },
     });
+
+    if (terminal) {
+      await setReconcileLast(customObjectsApi, namespace, name);
+    }
   } catch (error) {
     log.warn(
       `Failed to update status for BotModule "${name}" in namespace "${namespace}":`,
       error
     );
+  }
+}
+
+async function setReconcileLast(
+  customObjectsApi: K8s.CustomObjectsApi,
+  namespace: string,
+  name: string
+): Promise<void> {
+  try {
+    await customObjectsApi.patchNamespacedCustomObject({
+      group: eevee.BotModule.details.group,
+      version: eevee.BotModule.details.version,
+      namespace: namespace,
+      plural: eevee.BotModule.details.plural,
+      name: name,
+      body: {
+        metadata: {
+          annotations: {
+            'eevee.bot/reconcile-last': new Date().toISOString(),
+          },
+        },
+      },
+    });
+  } catch (error) {
+    log.debug('Failed to set reconcile-last annotation:', error);
   }
 }
 
