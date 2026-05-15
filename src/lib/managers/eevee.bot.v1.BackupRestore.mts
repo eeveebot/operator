@@ -330,7 +330,7 @@ async function reconcileResource(
       log.info(`No backupId specified — finding latest backup for module "${moduleName}"`);
 
       validateSecretNamespace(
-        s3StoreSpec.accessId?.secretKeyRef?.secret?.name,
+        s3StoreSpec.accessId?.secretKeyRef?.secret?.name || "",
         s3StoreSpec.accessId?.secretKeyRef?.secret?.namespace,
         namespace,
         `BackupRestore "${name}" accessId`
@@ -338,13 +338,13 @@ async function reconcileResource(
       const accessId = await resolveSecretKey(
         coreV1Api,
         namespace,
-        s3StoreSpec.accessId?.secretKeyRef?.secret?.name,
+        s3StoreSpec.accessId?.secretKeyRef?.secret?.name || "",
         s3StoreSpec.accessId?.secretKeyRef?.secret?.namespace || namespace,
-        s3StoreSpec.accessId?.secretKeyRef?.key
+        s3StoreSpec.accessId?.secretKeyRef?.key || ""
       );
 
       validateSecretNamespace(
-        s3StoreSpec.accessKey?.secretKeyRef?.secret?.name,
+        s3StoreSpec.accessKey?.secretKeyRef?.secret?.name || "",
         s3StoreSpec.accessKey?.secretKeyRef?.secret?.namespace,
         namespace,
         `BackupRestore "${name}" accessKey`
@@ -352,9 +352,9 @@ async function reconcileResource(
       const secretKey = await resolveSecretKey(
         coreV1Api,
         namespace,
-        s3StoreSpec.accessKey?.secretKeyRef?.secret?.name,
+        s3StoreSpec.accessKey?.secretKeyRef?.secret?.name || "",
         s3StoreSpec.accessKey?.secretKeyRef?.secret?.namespace || namespace,
-        s3StoreSpec.accessKey?.secretKeyRef?.key
+        s3StoreSpec.accessKey?.secretKeyRef?.key || ""
       );
 
       if (!accessId || !secretKey) {
@@ -402,9 +402,9 @@ async function reconcileResource(
 
     // Resolve S3 credential secret references for env injection
     const accessIdSecretName = s3StoreSpec.accessId?.secretKeyRef?.secret?.name;
-    const accessIdSecretKey = s3StoreSpec.accessId?.secretKeyRef?.key;
+    const accessIdSecretKey = s3StoreSpec.accessId?.secretKeyRef?.key || "";
     const accessKeySecretName = s3StoreSpec.accessKey?.secretKeyRef?.secret?.name;
-    const accessKeySecretKey = s3StoreSpec.accessKey?.secretKeyRef?.key;
+    const accessKeySecretKey = s3StoreSpec.accessKey?.secretKeyRef?.key || "";
 
     // Build the Job
     const envVars: K8s.V1EnvVar[] = [

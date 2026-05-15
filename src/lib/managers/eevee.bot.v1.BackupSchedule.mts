@@ -237,7 +237,7 @@ async function reconcileResource(
       const items = (botModulesResponse as { items: eevee.BotModule.BotModuleResource[] }).items;
       for (const bm of items) {
         if (bm.spec?.backupSchedule?.name === name) {
-          const crName = bm.metadata?.name;
+          const crName = bm.metadata?.name || "";
           targets.push({
             crName,
             moduleName: bm.spec.moduleName || crName,
