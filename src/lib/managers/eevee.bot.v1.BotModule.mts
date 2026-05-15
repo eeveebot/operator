@@ -1139,7 +1139,7 @@ async function validateAndTriggerBackupScheduleReconcile(
     log.debug(
       `Triggered reconciliation of BackupSchedule "${scheduleName}" via annotation`
     );
-  } catch (error) {
+  } catch {
     log.warn(
       `BackupSchedule "${scheduleName}" referenced by BotModule "${moduleName}" not found in namespace ${namespace}`
     );
@@ -1262,7 +1262,7 @@ async function handleBootstrapFromBackup(
 
   // Find the latest backup via S3 listing
   validateSecretNamespace(
-    s3StoreSpec.accessId?.secretKeyRef?.secret?.name!,
+    s3StoreSpec.accessId?.secretKeyRef?.secret?.name,
     s3StoreSpec.accessId?.secretKeyRef?.secret?.namespace,
     namespace,
     `BotModule "${moduleName}" bootstrap accessId`
@@ -1270,12 +1270,12 @@ async function handleBootstrapFromBackup(
   const accessId = await resolveSecretKey(
     coreV1Api,
     namespace,
-    s3StoreSpec.accessId?.secretKeyRef?.secret?.name!,
+    s3StoreSpec.accessId?.secretKeyRef?.secret?.name,
     s3StoreSpec.accessId?.secretKeyRef?.secret?.namespace || namespace,
-    s3StoreSpec.accessId?.secretKeyRef?.key!
+    s3StoreSpec.accessId?.secretKeyRef?.key
   );
   validateSecretNamespace(
-    s3StoreSpec.accessKey?.secretKeyRef?.secret?.name!,
+    s3StoreSpec.accessKey?.secretKeyRef?.secret?.name,
     s3StoreSpec.accessKey?.secretKeyRef?.secret?.namespace,
     namespace,
     `BotModule "${moduleName}" bootstrap accessKey`
@@ -1283,9 +1283,9 @@ async function handleBootstrapFromBackup(
   const secretKey = await resolveSecretKey(
     coreV1Api,
     namespace,
-    s3StoreSpec.accessKey?.secretKeyRef?.secret?.name!,
+    s3StoreSpec.accessKey?.secretKeyRef?.secret?.name,
     s3StoreSpec.accessKey?.secretKeyRef?.secret?.namespace || namespace,
-    s3StoreSpec.accessKey?.secretKeyRef?.key!
+    s3StoreSpec.accessKey?.secretKeyRef?.key
   );
 
   if (!accessId || !secretKey) {
@@ -1397,7 +1397,7 @@ async function handleBootstrapFromBackup(
           apiVersion: `${eevee.BotModule.details.group}/${eevee.BotModule.details.version}`,
           kind: eevee.BotModule.details.name,
           name: moduleName,
-          uid: item.metadata?.uid!,
+          uid: item.metadata?.uid,
           controller: true,
           blockOwnerDeletion: true,
         },
@@ -1664,7 +1664,7 @@ async function checkPvcBootstrappedAnnotation(
     });
     const annotations = pvc.metadata?.annotations || {};
     return annotations['eevee.bot/bootstrapped'] === 'true';
-  } catch (error) {
+  } catch {
     // PVC doesn't exist yet — not bootstrapped
     log.debug(`PVC ${pvcName} not found when checking bootstrapped annotation`);
     return false;

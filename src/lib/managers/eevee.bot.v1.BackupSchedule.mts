@@ -82,7 +82,6 @@ async function reconcileResource(
 
   const customObjectsApi = kc.makeApiClient(K8s.CustomObjectsApi);
   const batchV1Api = kc.makeApiClient(K8s.BatchV1Api);
-  const coreV1Api = kc.makeApiClient(K8s.CoreV1Api);
 
   try {
     const resourceName = event.meta.name;
@@ -238,7 +237,7 @@ async function reconcileResource(
       const items = (botModulesResponse as { items: eevee.BotModule.BotModuleResource[] }).items;
       for (const bm of items) {
         if (bm.spec?.backupSchedule?.name === name) {
-          const crName = bm.metadata?.name!;
+          const crName = bm.metadata?.name;
           targets.push({
             crName,
             moduleName: bm.spec.moduleName || crName,

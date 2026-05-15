@@ -151,7 +151,6 @@ async function reconcileResource(
 
     // If a Job already exists, check its status
     const jobName = `${name}-restore`;
-    let jobExists = false;
 
     try {
       const job = await batchV1Api.readNamespacedJob({
@@ -159,7 +158,6 @@ async function reconcileResource(
         namespace: namespace,
       });
 
-      jobExists = true;
 
       // Check job completion
       if (job.status?.succeeded) {
@@ -332,7 +330,7 @@ async function reconcileResource(
       log.info(`No backupId specified — finding latest backup for module "${moduleName}"`);
 
       validateSecretNamespace(
-        s3StoreSpec.accessId?.secretKeyRef?.secret?.name!,
+        s3StoreSpec.accessId?.secretKeyRef?.secret?.name,
         s3StoreSpec.accessId?.secretKeyRef?.secret?.namespace,
         namespace,
         `BackupRestore "${name}" accessId`
@@ -340,13 +338,13 @@ async function reconcileResource(
       const accessId = await resolveSecretKey(
         coreV1Api,
         namespace,
-        s3StoreSpec.accessId?.secretKeyRef?.secret?.name!,
+        s3StoreSpec.accessId?.secretKeyRef?.secret?.name,
         s3StoreSpec.accessId?.secretKeyRef?.secret?.namespace || namespace,
-        s3StoreSpec.accessId?.secretKeyRef?.key!
+        s3StoreSpec.accessId?.secretKeyRef?.key
       );
 
       validateSecretNamespace(
-        s3StoreSpec.accessKey?.secretKeyRef?.secret?.name!,
+        s3StoreSpec.accessKey?.secretKeyRef?.secret?.name,
         s3StoreSpec.accessKey?.secretKeyRef?.secret?.namespace,
         namespace,
         `BackupRestore "${name}" accessKey`
@@ -354,9 +352,9 @@ async function reconcileResource(
       const secretKey = await resolveSecretKey(
         coreV1Api,
         namespace,
-        s3StoreSpec.accessKey?.secretKeyRef?.secret?.name!,
+        s3StoreSpec.accessKey?.secretKeyRef?.secret?.name,
         s3StoreSpec.accessKey?.secretKeyRef?.secret?.namespace || namespace,
-        s3StoreSpec.accessKey?.secretKeyRef?.key!
+        s3StoreSpec.accessKey?.secretKeyRef?.key
       );
 
       if (!accessId || !secretKey) {
