@@ -35,18 +35,17 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
 
   // Skip reconciliation if only status changed (our own status update bounced back).
   // generation increments on spec changes; observedGeneration records which generation
-  // we last reconciled. If they match and status is terminal, this is a status-only update.
+  // we last reconciled. If they match, this is a status-only update (including our own
+  // "Reconciling" status write bouncing back) — no need to re-reconcile.
   if (event.type === ResourceEventType.Modified) {
     const obj = event.object as eevee.IpcConfig.IpcConfigResource;
     const currentGeneration = obj.metadata?.generation;
     const observedGeneration = obj.status?.conditions?.[0]?.observedGeneration;
-    const currentStatus = obj.status?.conditions?.[0]?.status;
 
     if (
       currentGeneration !== undefined &&
       observedGeneration !== undefined &&
-      currentGeneration === observedGeneration &&
-      currentStatus !== 'Unknown'
+      currentGeneration === observedGeneration
     ) {
       log.debug(
         `Skipping IpcConfig "${event.meta.name}" reconciliation — generation unchanged (observed=${observedGeneration}, current=${currentGeneration})`

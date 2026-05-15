@@ -52,20 +52,23 @@ async function handleResourceEvent(event: ResourceEvent): Promise<void> {
     return;
   }
 
-  // Skip reconciliation if only status changed (our own status update bounced back).
+  // Skip reconciliation if we've already reconciled this generation.
   // generation increments on spec changes; observedGeneration records which generation
-  // we last reconciled. If they match and status is terminal, this is a status-only update.
+  // we last reconciled. If they match, this is a status-only update (including our own
+  // "Reconciling" status write bouncing back) — no need to re-reconcile.
+  //
+  // Previous version excluded Unknown status from the skip, but that was the direct
+  // cause of the reconciliation loop: operator sets status to Reconciling/Unknown →
+  // MODIFIED event bounces back → guard doesn't skip → full reconcile again → repeat.
   if (event.type === ResourceEventType.Modified) {
     const obj = event.object as eevee.BotModule.BotModuleResource;
     const currentGeneration = obj.metadata?.generation;
     const observedGeneration = obj.status?.conditions?.[0]?.observedGeneration;
-    const currentStatus = obj.status?.conditions?.[0]?.status;
 
     if (
       currentGeneration !== undefined &&
       observedGeneration !== undefined &&
-      currentGeneration === observedGeneration &&
-      currentStatus !== 'Unknown'
+      currentGeneration === observedGeneration
     ) {
       log.debug(
         `Skipping BotModule "${moduleName}" reconciliation — generation unchanged (observed=${observedGeneration}, current=${currentGeneration})`
