@@ -122,6 +122,150 @@ router.get('/health', (req: Request, res: Response) => {
   res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+/**
+ * Fetch pod-level status for a BotModule's deployment.
+ * Returns null if the deployment or pods don't exist.
+ */
+async function getPodStatusForDeployment(
+  namespace: string,
+  deploymentName: string
+): Promise<{
+  phase: string;
+  ready: boolean;
+  restartCount: number;
+  containerStatuses: Array<{
+    name: string;
+    ready: boolean;
+    restartCount: number;
+    image: string;
+    state: Record<string, unknown> | null;
+    lastState: Record<string, unknown> | null;
+  }>;
+  conditions: Array<{
+    type: string;
+    status: string;
+    lastTransitionTime: string;
+  }>;
+  startedAt: string | null;
+} | null> {
+  try {
+    const appsV1Api = kc.makeApiClient(K8s.AppsV1Api);
+    const coreV1Api = kc.makeApiClient(K8s.CoreV1Api);
+
+    // Read the deployment
+    const deployment = await appsV1Api.readNamespacedDeployment({
+      name: deploymentName,
+      namespace,
+    });
+
+    // Find the current ReplicaSet via revision annotation
+    const deploymentRevision =
+      deployment.metadata?.annotations?.['deployment.kubernetes.io/revision'];
+    const deploymentUid = deployment.metadata?.uid;
+
+    const replicaSets = await appsV1Api.listNamespacedReplicaSet({ namespace });
+
+    let currentReplicaSetUid: string | undefined;
+    for (const rs of replicaSets.items) {
+      const owned = rs.metadata?.ownerReferences?.some(
+        (ref) => ref.uid === deploymentUid && ref.kind === 'Deployment'
+      );
+      const rsRevision =
+        rs.metadata?.annotations?.['deployment.kubernetes.io/revision'];
+      if (owned && rsRevision === deploymentRevision) {
+        currentReplicaSetUid = rs.metadata?.uid;
+        break;
+      }
+    }
+
+    // List pods matching the deployment's selector labels
+    const selector = deployment.spec?.selector?.matchLabels;
+    if (!selector) return null;
+
+    const labelSelector = Object.entries(selector)
+      .map(([k, v]) => `${k}=${v}`)
+      .join(',');
+
+    const pods = await coreV1Api.listNamespacedPod({
+      namespace,
+      labelSelector,
+    });
+
+    if (pods.items.length === 0) return null;
+
+    // Prefer pods owned by the current ReplicaSet
+    let targetPod = pods.items[0];
+    if (currentReplicaSetUid) {
+      const rsPod = pods.items.find((p) =>
+        p.metadata?.ownerReferences?.some(
+          (ref) => ref.uid === currentReplicaSetUid
+        )
+      );
+      if (rsPod) targetPod = rsPod;
+    }
+
+    // If multiple pods, pick the most recent by creation timestamp
+    if (pods.items.length > 1) {
+      pods.items.sort((a, b) => {
+        const aTime = a.metadata?.creationTimestamp?.getTime() ?? 0;
+        const bTime = b.metadata?.creationTimestamp?.getTime() ?? 0;
+        return bTime - aTime;
+      });
+      targetPod = pods.items[0];
+    }
+
+    // Extract status fields
+    const totalRestarts =
+      targetPod.status?.containerStatuses?.reduce(
+        (sum, cs) => sum + (cs.restartCount ?? 0),
+        0
+      ) ?? 0;
+
+    const isReady =
+      targetPod.status?.conditions?.some(
+        (c) => c.type === 'Ready' && c.status === 'True'
+      ) ?? false;
+
+    const startedAt =
+      targetPod.status?.startTime?.toISOString() ?? null;
+
+    const containerStatuses =
+      targetPod.status?.containerStatuses?.map((cs) => ({
+        name: cs.name ?? 'unknown',
+        ready: cs.ready ?? false,
+        restartCount: cs.restartCount ?? 0,
+        image: cs.image ?? 'unknown',
+        state: cs.state ? { ...cs.state } : null,
+        lastState: cs.lastState ? { ...cs.lastState } : null,
+      })) ?? [];
+
+    const conditions =
+      targetPod.status?.conditions?.map((c) => ({
+        type: c.type ?? 'Unknown',
+        status: c.status ?? 'Unknown',
+        lastTransitionTime: c.lastTransitionTime?.toISOString() ?? '',
+      })) ?? [];
+
+    return {
+      phase: targetPod.status?.phase ?? 'Unknown',
+      ready: isReady,
+      restartCount: totalRestarts,
+      containerStatuses,
+      conditions,
+      startedAt,
+    };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes('404')) {
+      return null;
+    }
+    log.warn(
+      `Failed to get pod status for deployment ${deploymentName}: ${message}`
+    );
+    return null;
+  }
+}
+
 // Get bot modules endpoint - returns list of botModules and their image/tag
 router.get('/bot-modules', async (req: Request, res: Response) => {
   try {
@@ -190,7 +334,8 @@ router.get('/bot-modules', async (req: Request, res: Response) => {
 
     // Map to simplified structure with module name and image info
     const moduleInfo = botModules.map((module: any) => {
-      const moduleName = module.metadata?.name;
+      const crName = module.metadata?.name;
+      const moduleName = module.spec?.moduleName || crName;
       const namespace = module.metadata?.namespace;
       const image = module.spec?.image || 'unknown';
 
@@ -199,6 +344,7 @@ router.get('/bot-modules', async (req: Request, res: Response) => {
 
       return {
         name: moduleName,
+        crName: crName,
         namespace: namespace,
         image: image,
         tag: tag,
@@ -206,6 +352,18 @@ router.get('/bot-modules', async (req: Request, res: Response) => {
           module.spec?.enabled !== undefined ? module.spec.enabled : true,
       };
     });
+
+    // Fetch pod status for each module (parallel)
+    const podStatusPromises = moduleInfo.map(async (mod: { crName: string; namespace: string }) => {
+      const deploymentName = `eevee-${mod.crName}-module`;
+      return getPodStatusForDeployment(mod.namespace, deploymentName);
+    });
+    const podStatuses = await Promise.all(podStatusPromises);
+
+    // Attach pod status to each module
+    for (let i = 0; i < moduleInfo.length; i++) {
+      (moduleInfo[i] as Record<string, unknown>).podStatus = podStatuses[i];
+    }
 
     res.status(200).json(moduleInfo);
   } catch (error: any) {
