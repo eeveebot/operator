@@ -28,11 +28,12 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1045.0",
-    "@eeveebot/crds": "^3.1.0",
+    "@eeveebot/crds": "^3.1.9",
     "@thehonker/k8s-operator": "^3.1.1-alpha.9",
     "express": "^5.2.1",
     "express-rate-limit": "^8.5.1",
     "prom-client": "^15.1.3",
     "winston": "^3.19.0"
-  }
+  },
+  "license": "AGPL-3.0-or-later"
 }
